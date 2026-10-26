@@ -462,7 +462,7 @@ function TimeDropdown({ label, value, options, onChange }) {
       role="listbox" aria-label={label} style={position}>
       {options.map((option, index) => <div id={`${listId}-${index}`} key={option} role="option"
         aria-selected={option === String(value)} className={`time-dropdown-option${index === activeIndex ? ' is-active' : ''}`}
-        onMouseEnter={() => setActiveIndex(index)} onClick={() => choose(index)}>{option}</div>)}
+        onClick={() => choose(index)}>{option}</div>)}
     </div>, document.body)}
   </div>;
 }
