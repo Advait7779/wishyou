@@ -1,10 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   House, UsersThree, UploadSimple, Confetti, PaperPlaneTilt,
   GearSix, SignOut, MagnifyingGlass, Plus, ArrowRight, Cake, Gift, Heart, ChatText,
   PhoneCall, CalendarBlank, Clock, CheckCircle, WarningCircle, Trash, PencilSimple, X, FloppyDisk,
-  Sparkle, ArrowUpRight, FileCsv, ArrowClockwise, List, ShieldCheck, Eye, EyeSlash,
+  Sparkle, ArrowUpRight, FileCsv, ArrowClockwise, List, ShieldCheck, Eye, EyeSlash, CaretDown,
 } from '@phosphor-icons/react';
 
 const nav = [
@@ -381,6 +381,92 @@ const greetingCards = [
   { occasion: 'anniversary', channel: 'voice', title: 'Anniversary Voice Call' },
 ];
 
+function TimeDropdown({ label, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [position, setPosition] = useState(null);
+  const triggerRef = useRef(null);
+  const listRef = useRef(null);
+  const listId = useId();
+  const selectedIndex = Math.max(0, options.indexOf(String(value)));
+
+  function show() {
+    setActiveIndex(selectedIndex);
+    setOpen(true);
+  }
+
+  function choose(index) {
+    onChange(options[index]);
+    setOpen(false);
+    triggerRef.current?.focus();
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const below = window.innerHeight - rect.bottom - 8;
+      const above = rect.top - 8;
+      const openAbove = below < 160 && above > below;
+      const maxHeight = Math.max(44, Math.min(220, options.length * 33 + 10, openAbove ? above : below));
+      setPosition({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
+        top: Math.max(8, Math.min(openAbove ? rect.top - maxHeight - 6 : rect.bottom + 6, window.innerHeight - maxHeight - 8)),
+        width: rect.width,
+        maxHeight,
+      });
+    };
+    const dismiss = event => {
+      if (!triggerRef.current?.contains(event.target) && !listRef.current?.contains(event.target)) setOpen(false);
+    };
+    const reposition = event => { if (!listRef.current?.contains(event.target)) place(); };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', reposition, true);
+    document.addEventListener('pointerdown', dismiss);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', reposition, true);
+      document.removeEventListener('pointerdown', dismiss);
+    };
+  }, [open, options.length]);
+
+  useLayoutEffect(() => {
+    if (!open || !position || !listRef.current) return;
+    const list = listRef.current;
+    const option = list.children[activeIndex];
+    if (option) list.scrollTop = option.offsetTop - (list.clientHeight - option.clientHeight) / 2;
+  }, [open, position, activeIndex]);
+
+  function handleKeyDown(event) {
+    if (event.key === 'Escape' && open) { event.preventDefault(); setOpen(false); return; }
+    if (event.key === 'Tab') { setOpen(false); return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!open) { show(); return; }
+      setActiveIndex(index => (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length);
+    } else if (event.key === 'Home' && open) { event.preventDefault(); setActiveIndex(0); }
+    else if (event.key === 'End' && open) { event.preventDefault(); setActiveIndex(options.length - 1); }
+    else if ((event.key === 'Enter' || event.key === ' ') && open) { event.preventDefault(); choose(activeIndex); }
+  }
+
+  return <div className="time-dropdown">
+    <button type="button" ref={triggerRef} className={`time-dropdown-trigger${open ? ' is-open' : ''}`}
+      aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
+      aria-activedescendant={open ? `${listId}-${activeIndex}` : undefined}
+      onClick={() => open ? setOpen(false) : show()} onKeyDown={handleKeyDown}>
+      <span>{value}</span><CaretDown size={13} weight="bold" />
+    </button>
+    {open && position && createPortal(<div id={listId} ref={listRef} className="time-dropdown-menu"
+      role="listbox" aria-label={label} style={position}>
+      {options.map((option, index) => <div id={`${listId}-${index}`} key={option} role="option"
+        aria-selected={option === String(value)} className={`time-dropdown-option${index === activeIndex ? ' is-active' : ''}`}
+        onMouseEnter={() => setActiveIndex(index)} onClick={() => choose(index)}>{option}</div>)}
+    </div>, document.body)}
+  </div>;
+}
+
 function ScheduleTimePicker({ value, onChange }) {
   const time = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value || '') || ['09:00', '09', '00'];
   const hour24 = Number(time[1]);
@@ -394,16 +480,13 @@ function ScheduleTimePicker({ value, onChange }) {
   return <div className="field schedule-time-field">
     <span>Daily send time</span>
     <div className="schedule-time-controls" role="group" aria-label="Daily send time">
-      <select aria-label="Hour" value={hour} onChange={event => update(event.target.value, minute, period)}>
-        {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
-      </select>
+      <TimeDropdown label="Hour" value={String(hour)} options={Array.from({ length: 12 }, (_, index) => String(index + 1))}
+        onChange={nextHour => update(nextHour, minute, period)} />
       <span aria-hidden="true">:</span>
-      <select aria-label="Minute" value={minute} onChange={event => update(hour, event.target.value, period)}>
-        {Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0')).map(value => <option key={value} value={value}>{value}</option>)}
-      </select>
-      <select aria-label="AM or PM" value={period} onChange={event => update(hour, minute, event.target.value)}>
-        <option value="AM">AM</option><option value="PM">PM</option>
-      </select>
+      <TimeDropdown label="Minute" value={minute} options={Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))}
+        onChange={nextMinute => update(hour, nextMinute, period)} />
+      <TimeDropdown label="AM or PM" value={period} options={['AM', 'PM']}
+        onChange={nextPeriod => update(hour, minute, nextPeriod)} />
     </div>
   </div>;
 }
