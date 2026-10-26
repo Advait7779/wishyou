@@ -342,6 +342,11 @@ body { min-width: 0; }
 .review-provider span { color: #a29489; }
 .review-error { color: #b73f37; background: #fff0ee; border-radius: 8px; padding: 10px; margin: 13px 0 0; font-size: 12px; }
 .schedule-panel .form-end { margin-top: 20px; }
+.schedule-time-field { margin-top: 16px; max-width: 390px; }
+.schedule-time-controls { display: flex; align-items: center; gap: 8px; }
+.schedule-time-controls select { flex: 1 1 0; min-width: 0; text-align: center; font-size: 13px; }
+.schedule-time-controls select:last-child { flex: 0 0 84px; }
+.schedule-time-controls > span { color: #8b7868; font-size: 16px; font-weight: 700; }
 @media (max-width: 560px) {
   .greeting-review-modal { padding: 18px; }
   .greeting-review-modal .review-selects { grid-template-columns: 1fr; }

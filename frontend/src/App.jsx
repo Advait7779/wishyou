@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   House, UsersThree, UploadSimple, Confetti, PaperPlaneTilt,
   GearSix, SignOut, MagnifyingGlass, Plus, ArrowRight, Cake, Gift, Heart, ChatText,
-  PhoneCall, CalendarBlank, CheckCircle, WarningCircle, Trash, PencilSimple, X, FloppyDisk,
+  PhoneCall, CalendarBlank, Clock, CheckCircle, WarningCircle, Trash, PencilSimple, X, FloppyDisk,
   Sparkle, ArrowUpRight, FileCsv, ArrowClockwise, List, ShieldCheck, Eye, EyeSlash,
 } from '@phosphor-icons/react';
 
@@ -381,6 +381,33 @@ const greetingCards = [
   { occasion: 'anniversary', channel: 'voice', title: 'Anniversary Voice Call' },
 ];
 
+function ScheduleTimePicker({ value, onChange }) {
+  const time = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value || '') || ['09:00', '09', '00'];
+  const hour24 = Number(time[1]);
+  const hour = hour24 % 12 || 12;
+  const minute = time[2];
+  const period = hour24 >= 12 ? 'PM' : 'AM';
+  function update(nextHour, nextMinute, nextPeriod) {
+    const nextHour24 = Number(nextHour) % 12 + (nextPeriod === 'PM' ? 12 : 0);
+    onChange(`${String(nextHour24).padStart(2, '0')}:${nextMinute}`);
+  }
+  return <div className="field schedule-time-field">
+    <span>Daily send time</span>
+    <div className="schedule-time-controls" role="group" aria-label="Daily send time">
+      <select aria-label="Hour" value={hour} onChange={event => update(event.target.value, minute, period)}>
+        {Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
+      </select>
+      <span aria-hidden="true">:</span>
+      <select aria-label="Minute" value={minute} onChange={event => update(hour, event.target.value, period)}>
+        {Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0')).map(value => <option key={value} value={value}>{value}</option>)}
+      </select>
+      <select aria-label="AM or PM" value={period} onChange={event => update(hour, minute, event.target.value)}>
+        <option value="AM">AM</option><option value="PM">PM</option>
+      </select>
+    </div>
+  </div>;
+}
+
 function Settings({ settings, greetingUrls, refresh, notify }) {
   const [schedule, setSchedule] = useState(settings || {});
   const [cards, setCards] = useState(greetingUrls || []);
@@ -418,7 +445,7 @@ function Settings({ settings, greetingUrls, refresh, notify }) {
   async function saveSchedule() {
     setSavingSchedule(true);
     try {
-      await api('/settings', json('PUT', schedule));
+      await api('/settings', json('PUT', { ...schedule, sendTime: schedule.sendTime || '09:00', timezone: schedule.timezone || 'Asia/Kolkata' }));
       notify('Sending schedule saved.');
       refresh();
     } catch (error) {
@@ -467,12 +494,9 @@ function Settings({ settings, greetingUrls, refresh, notify }) {
             <h3>Choose your send time</h3>
             <p>Choose when automatic birthday and anniversary wishes are sent.</p>
           </div>
-          <CalendarBlank size={26} className="accent-icon" />
+          <Clock size={26} className="accent-icon" />
         </div>
-        <div className="form-grid">
-          <Field label="Timezone"><input value={schedule.timezone || ''} onChange={event => setSchedule({ ...schedule, timezone: event.target.value })} placeholder="Asia/Kolkata" /></Field>
-          <Field label="Daily send time"><input type="time" value={schedule.sendTime || '09:00'} onChange={event => setSchedule({ ...schedule, sendTime: event.target.value })} /></Field>
-        </div>
+        <ScheduleTimePicker value={schedule.sendTime} onChange={sendTime => setSchedule(previous => ({ ...previous, sendTime }))} />
         <div className="form-grid">
           <label className="toggle-row"><span><strong>Automatic birthdays</strong><small>Send on the person's birthday</small></span><input type="checkbox" checked={Boolean(schedule.birthdayEnabled)} onChange={event => setSchedule({ ...schedule, birthdayEnabled: event.target.checked })} /></label>
           <label className="toggle-row"><span><strong>Automatic anniversaries</strong><small>Send on the anniversary date</small></span><input type="checkbox" checked={Boolean(schedule.anniversaryEnabled)} onChange={event => setSchedule({ ...schedule, anniversaryEnabled: event.target.checked })} /></label>
