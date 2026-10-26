@@ -1,0 +1,20 @@
+{
+  "name": "@wishyou/frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.15",
+    "@vitejs/plugin-react": "^5.1.0",
+    "tailwindcss": "^4.1.15",
+    "vite": "^7.1.12"
+  }
+}

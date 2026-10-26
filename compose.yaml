@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wishyou
+      POSTGRES_USER: wishyou
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a long URL-safe PostgreSQL password}
+    volumes:
+      - wishyou_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wishyou -d wishyou"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgres://wishyou:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/wishyou
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      CONFIG_ENCRYPTION_KEY: ${CONFIG_ENCRYPTION_KEY:?Set CONFIG_ENCRYPTION_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set the public HTTPS origin}
+      TRUST_PROXY: "2"
+      PYTHON_BIN: /opt/venv/bin/python
+      IMPORT_UPLOAD_DIR: /app/backend/uploads
+      TMPDIR: /app/backend/uploads
+      IMPORT_MAX_EXPANDED_GB: ${IMPORT_MAX_EXPANDED_GB:-500}
+      IMPORT_SHARED_STRING_MEMORY_MB: ${IMPORT_SHARED_STRING_MEMORY_MB:-32}
+      SMS_RATE_PER_SECOND: ${SMS_RATE_PER_SECOND:-5}
+      VOICE_RATE_PER_SECOND: ${VOICE_RATE_PER_SECOND:-1}
+    volumes:
+      - wishyou_uploads:/app/backend/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  wishyou_pgdata:
+  wishyou_uploads:
