@@ -106,6 +106,11 @@ export async function setupDatabase() {
   await q('ALTER EXTENSION pg_trgm SET SCHEMA public');
   await q('CREATE INDEX CONCURRENTLY IF NOT EXISTS contacts_data_search_idx ON contacts USING GIN ((data::text) public.gin_trgm_ops)');
   await q('CREATE INDEX CONCURRENTLY IF NOT EXISTS contacts_phone_search_idx ON contacts USING GIN (phone public.gin_trgm_ops)');
+  await q('CREATE INDEX CONCURRENTLY IF NOT EXISTS contacts_birth_month_day_dashboard_idx ON contacts((EXTRACT(MONTH FROM birth_date)),(EXTRACT(DAY FROM birth_date)))');
+  await q('CREATE INDEX CONCURRENTLY IF NOT EXISTS contacts_anniversary_month_day_dashboard_idx ON contacts((EXTRACT(MONTH FROM anniversary_date)),(EXTRACT(DAY FROM anniversary_date)))');
+  await q('CREATE INDEX CONCURRENTLY IF NOT EXISTS deliveries_contact_created_idx ON deliveries(contact_id, created_at DESC)');
+  await q("CREATE INDEX CONCURRENTLY IF NOT EXISTS deliveries_contact_pending_idx ON deliveries(contact_id) WHERE status IN ('queued','sending')");
+  await q("CREATE INDEX CONCURRENTLY IF NOT EXISTS campaigns_scheduled_send_idx ON campaigns(send_at) WHERE status='scheduled'");
   await q("CREATE INDEX CONCURRENTLY IF NOT EXISTS deliveries_failed_recent_idx ON deliveries(id DESC) WHERE status='failed'");
   await q("CREATE INDEX IF NOT EXISTS deliveries_sent_phone_idx ON deliveries(phone) WHERE status='sent'");
   await q('CREATE UNIQUE INDEX IF NOT EXISTS campaigns_auto_day_idx ON campaigns(occasion,channel,schedule_date) WHERE auto_generated=true AND schedule_date IS NOT NULL');

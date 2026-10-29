@@ -11,6 +11,7 @@ import { assertSafeEndpoint, buildReadyUrl, decryptSecret, encryptSecret, sendPr
 import { createCampaign, manualSendAllowance, processDueDeliveries, scheduleTodaysWishes, stopDeliveryWorker } from './queue.js';
 import { installUploadRoutes, recoverImports, stopImports } from './uploads.js';
 import { clientError, errorResponse } from './api-errors.js';
+import { createContactsCursor, readContactsCursor, validDatabaseId } from './pagination.js';
 
 if (!process.env.DATABASE_URL || !process.env.JWT_SECRET || !process.env.CONFIG_ENCRYPTION_KEY || !process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
   throw new Error('Set DATABASE_URL, JWT_SECRET, CONFIG_ENCRYPTION_KEY, ADMIN_EMAIL, and ADMIN_PASSWORD in backend/.env.');
@@ -81,11 +82,11 @@ app.use('/api', auth);
 installUploadRoutes(app, asyncRoute, audit);
 
 app.get('/api/dashboard', asyncRoute(async (_, res) => {
-  const [templates, campaigns, deliveries, dataset, recentFailures] = await Promise.all([
-    q('SELECT count(*)::int AS total FROM wish_templates WHERE active=true'),
-    q('SELECT count(*)::int AS total FROM campaigns'),
+  const [greetingCount, campaigns, deliveries, dataset, recentFailures] = await Promise.all([
+    q('SELECT count(*)::int AS total FROM wish_templates WHERE settings_slot=true AND ready_url_encrypted IS NOT NULL'),
+    q('SELECT EXISTS(SELECT 1 FROM campaigns) AS present'),
     q("SELECT status, count(*)::int AS total FROM deliveries GROUP BY status"),
-    q('SELECT id,name,columns,row_count,created_at FROM datasets ORDER BY id DESC LIMIT 1'),
+    q('SELECT id,name,row_count,created_at FROM datasets ORDER BY id DESC LIMIT 1'),
     q(`SELECT d.id,d.contact_name,d.phone,c.occasion,c.channel,d.created_at
       FROM deliveries d JOIN campaigns c ON c.id=d.campaign_id
       WHERE d.status='failed' ORDER BY d.id DESC LIMIT 5`),
@@ -99,30 +100,41 @@ app.get('/api/dashboard', asyncRoute(async (_, res) => {
     q(`SELECT id,display_name,phone,birth_date,anniversary_date,${birthdayToday} AS birthday_today,${anniversaryToday} AS anniversary_today
       FROM contacts WHERE ${birthdayToday} OR ${anniversaryToday} ORDER BY created_at DESC,id DESC LIMIT 3`, [timezone]),
   ]);
-  res.json({ contacts: Number(dataset.rows[0]?.row_count || 0), templates: templates.rows[0].total, campaigns: campaigns.rows[0].total, deliveries: Object.fromEntries(deliveries.rows.map(row => [row.status, row.total])), recentFailures: recentFailures.rows, dataset: dataset.rows[0] || null, todayCount: todayCount.rows[0].total, today: today.rows });
+  res.json({ contacts: Number(dataset.rows[0]?.row_count || 0), greetingCount: greetingCount.rows[0].total,
+    birthdayEnabled: Boolean(schedule.birthdayEnabled), anniversaryEnabled: Boolean(schedule.anniversaryEnabled),
+    hasCampaigns: campaigns.rows[0].present, deliveries: Object.fromEntries(deliveries.rows.map(row => [row.status, row.total])),
+    recentFailures: recentFailures.rows, dataset: dataset.rows[0] || null, todayCount: todayCount.rows[0].total, today: today.rows });
 }));
 
 app.get('/api/contacts', asyncRoute(async (req, res) => {
-  const limit = Math.min(100, Math.max(10, Number(req.query.limit) || 25));
+  const requestedLimit = Number(req.query.limit);
+  const limit = Number.isSafeInteger(requestedLimit) ? Math.min(100, Math.max(10, requestedLimit)) : 25;
   const search = String(req.query.search || '').trim().slice(0, 100);
   const before = String(req.query.before || '');
+  const datasetId = String(req.query.datasetId || '');
+  const includeTotal = req.query.includeTotal !== 'false';
   if (search && search.length < 3) return res.status(400).json({ error: 'Enter at least 3 characters to search contacts.' });
-  if (before && !/^[1-9]\d*$/.test(before)) return res.status(400).json({ error: 'Invalid page cursor.' });
-  const dataset = (await q('SELECT * FROM datasets ORDER BY id DESC LIMIT 1')).rows[0] || null;
-  const params = [];
-  const clauses = [];
+  if (datasetId && !validDatabaseId(datasetId)) return res.status(400).json({ error: 'Invalid dataset ID.' });
+  const dataset = (await q('SELECT id,name,columns,row_count,created_at FROM datasets ORDER BY id DESC LIMIT 1')).rows[0] || null;
+  if (datasetId && String(dataset?.id) !== datasetId) return res.status(409).json({ error: 'The contact dataset changed. Reloading the first page.' });
+  if (!dataset) return res.json({ dataset: null, items: [], total: 0, limit, nextCursor: null });
+  const beforeId = before ? readContactsCursor(before, { datasetId: dataset.id, search }) : null;
+  const params = [dataset.id];
+  const clauses = ['dataset_id=$1'];
   if (search) { params.push(`%${search}%`); clauses.push(`(data::text ILIKE $${params.length} OR phone ILIKE $${params.length})`); }
-  if (before) { params.push(before); clauses.push(`id < $${params.length}::bigint`); }
+  if (beforeId) { params.push(beforeId); clauses.push(`id < $${params.length}::bigint`); }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   params.push(limit + 1);
   const [items, count] = await Promise.all([
     q(`SELECT id,data,display_name,phone,birth_date,anniversary_date,active FROM contacts ${where} ORDER BY id DESC LIMIT $${params.length}`, params),
-    search ? q('SELECT count(*)::int AS total FROM contacts WHERE data::text ILIKE $1 OR phone ILIKE $1', [`%${search}%`]) : Promise.resolve({ rows: [{ total: dataset?.row_count || 0 }] }),
+    !includeTotal ? Promise.resolve(null) : search
+      ? q('SELECT count(*)::bigint AS total FROM contacts WHERE dataset_id=$1 AND (data::text ILIKE $2 OR phone ILIKE $2)', [dataset.id, `%${search}%`])
+      : Promise.resolve({ rows: [{ total: dataset.row_count }] }),
   ]);
   const hasNext = items.rows.length > limit;
   const pageItems = items.rows.slice(0, limit);
-  res.json({ dataset, items: pageItems, total: Number(count.rows[0].total), limit,
-    nextCursor: hasNext ? String(pageItems.at(-1).id) : null });
+  res.json({ dataset, items: pageItems, total: count ? Number(count.rows[0].total) : null, limit,
+    nextCursor: hasNext ? createContactsCursor({ id: pageItems.at(-1).id, datasetId: dataset.id, search }) : null });
 }));
 
 app.patch('/api/contacts/:id', asyncRoute(async (req, res) => {

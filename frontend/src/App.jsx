@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   House, UsersThree, UploadSimple, Confetti, PaperPlaneTilt,
@@ -17,7 +17,11 @@ async function api(path, options = {}) {
   const isForm = options.body instanceof FormData;
   const response = await fetch(`/api${path}`, { credentials: 'include', ...options, headers: { ...(isForm ? {} : { 'content-type': 'application/json' }), ...options.headers } });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(data.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
@@ -53,23 +57,28 @@ function FailedWishes({ count, items, navigate }) {
   return <section className="panel" role="status"><div className="panel-heading"><div><span className="eyebrow">NEEDS REVIEW</span><h3>{count.toLocaleString()} greeting{count === 1 ? '' : 's'} failed</h3></div><button className="text-action" onClick={() => navigate('contacts')}>View contacts <ArrowUpRight size={16} /></button></div><div className="celebration-list">{items.map(item => <div className="celebration-item" key={item.id}><span className="avatar"><WarningCircle size={20} /></span><div><strong>{item.contact_name || item.phone}</strong><small>{item.phone} · {item.occasion} {item.channel} · {prettyTime(item.created_at)}</small></div><Badge tone="warm">Failed</Badge></div>)}</div></section>;
 }
 
-function Dashboard({ data, greetingUrls, settings, navigate }) {
+function Dashboard({ data, navigate }) {
   const deliveries = data?.deliveries || {};
   const sent = deliveries.sent || 0;
-  const greetingCount = greetingUrls.filter(entry => entry.url).length;
-  return <div className="page-stack"><div className="welcome-banner"><div className="welcome-text"><span className="eyebrow light">YOUR WISHING SPACE</span><h2>Celebrate the little things.<br /><em>They become the big things.</em></h2><p>Keep every birthday and anniversary close, and every message heartfelt.</p></div><div className="banner-illustration"><div className="orb orb-main"><Confetti size={74} weight="duotone" /></div><div className="orb orb-small"><Heart size={28} weight="fill" /></div><div className="orb orb-star"><Cake size={31} weight="duotone" /></div></div></div><div className="stats-grid"><Stat icon={UsersThree} value={data?.contacts ?? 0} label="Total contacts" tone="orange" /><Stat icon={CalendarBlank} value={data?.todayCount ?? data?.today?.length ?? 0} label="Celebrating today" tone="pink" /><Stat icon={PaperPlaneTilt} value={sent} label="Wishes accepted" tone="purple" /><Stat icon={ChatText} value={greetingCount} label="Greeting URLs" tone="gold" /></div><FailedWishes count={deliveries.failed || 0} items={data?.recentFailures || []} navigate={navigate} /><div className="two-column"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">SPECIAL DAYS</span><h3>Today's celebrations</h3></div><button className="text-action" onClick={() => navigate('contacts')}>View contacts <ArrowUpRight size={16} /></button></div>{data?.today?.length ? <div className="celebration-list">{data.today.slice(0, 3).map(person => <div className="celebration-item" key={person.id}><span className="avatar">{(person.display_name || 'F')[0].toUpperCase()}</span><div><strong>{person.display_name || 'Friend'}</strong><small>{person.phone}</small></div><Badge tone="warm">{person.birthday_today ? 'Birthday' : 'Anniversary'}</Badge></div>)}</div> : <Empty icon={Cake} title="No celebrations today" body="Your special moments will appear here when your contacts are imported." action={<Button variant="soft" icon={UploadSimple} onClick={() => navigate('contacts')}>Import contacts</Button>} />}</section><section className="panel how-panel"><div className="panel-heading"><div><span className="eyebrow">QUICK START</span><h3>Your path to a perfect wish</h3></div></div><div className="steps"><Step number="01" title="Add your people" body="Upload a CSV or Excel file with your contacts and dates." active={Boolean(data?.contacts)} /><Step number="02" title="Add greeting links" body="Save your birthday and anniversary URLs in Settings." active={Boolean(greetingCount)} /><Step number="03" title="Send with a smile" body="Enable automatic wishes in Settings or send to one person from Contacts." active={Boolean(settings?.birthdayEnabled || settings?.anniversaryEnabled || data?.campaigns)} /></div></section></div></div>;
+  const greetingCount = data?.greetingCount || 0;
+  return <div className="page-stack"><div className="welcome-banner"><div className="welcome-text"><span className="eyebrow light">YOUR WISHING SPACE</span><h2>Celebrate the little things.<br /><em>They become the big things.</em></h2><p>Keep every birthday and anniversary close, and every message heartfelt.</p></div><div className="banner-illustration"><div className="orb orb-main"><Confetti size={74} weight="duotone" /></div><div className="orb orb-small"><Heart size={28} weight="fill" /></div><div className="orb orb-star"><Cake size={31} weight="duotone" /></div></div></div><div className="stats-grid"><Stat icon={UsersThree} value={data?.contacts ?? 0} label="Total contacts" tone="orange" /><Stat icon={CalendarBlank} value={data?.todayCount ?? data?.today?.length ?? 0} label="Celebrating today" tone="pink" /><Stat icon={PaperPlaneTilt} value={sent} label="Wishes accepted" tone="purple" /><Stat icon={ChatText} value={greetingCount} label="Greeting URLs" tone="gold" /></div><FailedWishes count={deliveries.failed || 0} items={data?.recentFailures || []} navigate={navigate} /><div className="two-column"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">SPECIAL DAYS</span><h3>Today's celebrations</h3></div><button className="text-action" onClick={() => navigate('contacts')}>View contacts <ArrowUpRight size={16} /></button></div>{data?.today?.length ? <div className="celebration-list">{data.today.slice(0, 3).map(person => <div className="celebration-item" key={person.id}><span className="avatar">{(person.display_name || 'F')[0].toUpperCase()}</span><div><strong>{person.display_name || 'Friend'}</strong><small>{person.phone}</small></div><Badge tone="warm">{person.birthday_today ? 'Birthday' : 'Anniversary'}</Badge></div>)}</div> : <Empty icon={Cake} title="No celebrations today" body="Your special moments will appear here when your contacts are imported." action={<Button variant="soft" icon={UploadSimple} onClick={() => navigate('contacts')}>Import contacts</Button>} />}</section><section className="panel how-panel"><div className="panel-heading"><div><span className="eyebrow">QUICK START</span><h3>Your path to a perfect wish</h3></div></div><div className="steps"><Step number="01" title="Add your people" body="Upload a CSV or Excel file with your contacts and dates." active={Boolean(data?.contacts)} /><Step number="02" title="Add greeting links" body="Save your birthday and anniversary URLs in Settings." active={Boolean(greetingCount)} /><Step number="03" title="Send with a smile" body="Enable automatic wishes in Settings or send to one person from Contacts." active={Boolean(data?.birthdayEnabled || data?.anniversaryEnabled || data?.hasCampaigns)} /></div></section></div></div>;
 }
 function Stat({ icon: Icon, value, label, tone }) { return <div className="stat-card"><span className={`stat-icon stat-${tone}`}><Icon size={24} weight="duotone" /></span><div><strong>{value.toLocaleString()}</strong><span>{label}</span></div><ArrowUpRight size={18} className="stat-arrow" /></div>; }
 function Step({ number, title, body, active }) { return <div className="step"><span className={`step-number ${active ? 'done' : ''}`}>{active ? <CheckCircle size={22} weight="fill" /> : number}</span><div><strong>{title}</strong><p>{body}</p></div></div>; }
 
-function Contacts({ data, settings, refresh, notify }) {
+function Contacts({ settings, refresh, reloadKey, notify }) {
   const fileInputRef = useRef(null);
   const uploadControllerRef = useRef(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [cursor, setCursor] = useState(null);
   const [cursorStack, setCursorStack] = useState([]);
-  const [result, setResult] = useState(data);
+  const [result, setResult] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [datasetVersion, setDatasetVersion] = useState(0);
+  const datasetIdRef = useRef(null);
+  const totalCacheRef = useRef(null);
+  const lastReloadKeyRef = useRef(reloadKey);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [cancelingUpload, setCancelingUpload] = useState(false);
@@ -82,32 +91,126 @@ function Contacts({ data, settings, refresh, notify }) {
   const [reviewing, setReviewing] = useState(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  useEffect(() => { let live = true; if (search.trim() && search.trim().length < 3) { setResult(previous => ({ ...previous, items: [], total: 0, nextCursor: null })); setBusy(false); return () => { live = false; }; } setBusy(true); const timer = setTimeout(() => api(`/contacts?search=${encodeURIComponent(search)}${cursor ? `&before=${cursor}` : ''}`).then(value => { if (live) setResult(value); }).catch(error => notify(error.message, 'error')).finally(() => { if (live) setBusy(false); }), 180); return () => { live = false; clearTimeout(timer); }; }, [cursor, search, refresh]);
+  useEffect(() => {
+    if (search.trim() && search.trim().length < 3) {
+      setResult(previous => ({ ...previous, items: [], total: 0, nextCursor: null }));
+      setBusy(false);
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ search });
+    if (lastReloadKeyRef.current !== reloadKey) {
+      totalCacheRef.current = null;
+      lastReloadKeyRef.current = reloadKey;
+    }
+    const searchKey = search.trim();
+    const cachedTotal = totalCacheRef.current?.search === searchKey && totalCacheRef.current?.datasetId === datasetIdRef.current
+      ? totalCacheRef.current.total : null;
+    if (cursor) params.set('before', cursor);
+    if (datasetIdRef.current) params.set('datasetId', String(datasetIdRef.current));
+    if (cachedTotal !== null) params.set('includeTotal', 'false');
+    setBusy(true);
+    setLoadError('');
+    const timer = setTimeout(() => {
+      api(`/contacts?${params}`, { signal: controller.signal })
+        .then(value => {
+          if (controller.signal.aborted) return;
+          datasetIdRef.current = value.dataset?.id || null;
+          if (value.total !== null) totalCacheRef.current = { search: searchKey, datasetId: datasetIdRef.current, total: value.total };
+          setResult({ ...value, total: value.total === null ? cachedTotal : value.total });
+        })
+        .catch(error => {
+          if (controller.signal.aborted) return;
+          if (error.status === 409) {
+            datasetIdRef.current = null;
+            totalCacheRef.current = null;
+            setCursor(null);
+            setCursorStack([]);
+            setPage(1);
+            setDatasetVersion(version => version + 1);
+          } else {
+            setLoadError(error.message);
+            notify(error.message, 'error');
+          }
+        })
+        .finally(() => { if (!controller.signal.aborted) setBusy(false); });
+    }, 180);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [cursor, search, reloadKey, datasetVersion, notify]);
   function previousPage() { if (page <= 1) return; setCursor(cursorStack.at(-1) || null); setCursorStack(cursorStack.slice(0, -1)); setPage(page - 1); }
   function nextPage() { if (!result?.nextCursor) return; setCursorStack([...cursorStack, cursor]); setCursor(result.nextCursor); setPage(page + 1); }
+  const observedActiveImportRef = useRef(false);
+  const importStatusRef = useRef(null);
+  const acceptImportJob = useCallback(job => {
+    importStatusRef.current = job?.status || null;
+    setImportJob(job);
+    if (['uploading', 'queued', 'processing', 'waiting_for_sends'].includes(job?.status)) observedActiveImportRef.current = true;
+    if (job?.status === 'completed' && completedImportRef.current !== job.id) {
+      completedImportRef.current = job.id;
+      const recentlyCompleted = Date.now() - new Date(job.updatedAt).getTime() < 60000;
+      if (observedActiveImportRef.current || recentlyCompleted) {
+        datasetIdRef.current = null;
+        totalCacheRef.current = null;
+        setCursor(null);
+        setCursorStack([]);
+        setPage(1);
+        refresh();
+      }
+      if (recentlyCompleted) {
+        notify(`Imported ${job.imported.toLocaleString()} contacts${job.skipped ? `; ${job.skipped.toLocaleString()} rows skipped` : ''}.`);
+      }
+      observedActiveImportRef.current = false;
+    }
+  }, [notify, refresh]);
   useEffect(() => {
-    let live = true;
-    const poll = async () => {
-      try {
-        const job = await api('/imports/uploads/latest');
-        if (!live) return;
-        setImportJob(job);
-        if (job?.status === 'completed' && completedImportRef.current !== job.id) {
-          completedImportRef.current = job.id;
-          if (Date.now() - new Date(job.updatedAt).getTime() < 60000) {
-            notify(`Imported ${job.imported.toLocaleString()} contacts${job.skipped ? `; ${job.skipped.toLocaleString()} rows skipped` : ''}.`);
-            refresh();
-          }
-        }
-      } catch (error) { if (live) console.error('Import status:', error); }
+    const controller = new AbortController();
+    let checking = false;
+    const checkLatest = () => {
+      if (checking || document.hidden || ['uploading', 'queued', 'processing', 'waiting_for_sends'].includes(importStatusRef.current)) return;
+      checking = true;
+      api('/imports/uploads/latest', { signal: controller.signal }).then(job => {
+        if (!controller.signal.aborted) acceptImportJob(job);
+      }).catch(error => { if (!controller.signal.aborted) console.error('Import status:', error); })
+        .finally(() => { checking = false; });
     };
-    poll();
+    checkLatest();
+    document.addEventListener('visibilitychange', checkLatest);
+    return () => { document.removeEventListener('visibilitychange', checkLatest); controller.abort(); };
+  }, [acceptImportJob]);
+  useEffect(() => {
+    if (!['uploading', 'queued', 'processing', 'waiting_for_sends'].includes(importJob?.status)) return;
+    let inFlight = false;
+    const controller = new AbortController();
+    const poll = async () => {
+      if (inFlight || document.hidden || uploadControllerRef.current) return;
+      inFlight = true;
+      try { acceptImportJob(await api(`/imports/uploads/${importJob.id}`, { signal: controller.signal })); }
+      catch (error) {
+        if (!controller.signal.aborted && error.status === 404) {
+          importStatusRef.current = null;
+          setImportJob(null);
+        }
+        else if (!controller.signal.aborted) console.error('Import status:', error);
+      } finally { inFlight = false; }
+    };
     const timer = setInterval(poll, 3000);
-    return () => { live = false; clearInterval(timer); };
-  }, []);
+    document.addEventListener('visibilitychange', poll);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll); controller.abort(); };
+  }, [importJob?.id, importJob?.status, acceptImportJob]);
   const columns = result?.dataset?.columns || [];
   async function clear() {
-    try { await api('/contacts/clear', json('POST', { confirm: 'CLEAR' })); setConfirmClear(false); setResult(null); notify('Contacts and columns have been cleared.'); refresh(); }
+    try {
+      await api('/contacts/clear', json('POST', { confirm: 'CLEAR' }));
+      setConfirmClear(false);
+      setResult(null);
+      datasetIdRef.current = null;
+      totalCacheRef.current = null;
+      setCursor(null);
+      setCursorStack([]);
+      setPage(1);
+      notify('Contacts and columns have been cleared.');
+      refresh();
+    }
     catch (error) { notify(error.message, 'error'); }
   }
   async function saveEdit() {
@@ -145,7 +248,7 @@ function Contacts({ data, settings, refresh, notify }) {
         job = await api('/imports/uploads', json('POST', { filename: file.name, size: file.size, dateFormat }));
         localStorage.setItem(resumeKey, job.id);
       }
-      setImportJob(job);
+      acceptImportJob(job);
       if (job.status !== 'uploading') { notify('This file is already being processed.'); return; }
       let offset = job.offset;
       const chunkSize = 16 * 1024 * 1024;
@@ -168,11 +271,11 @@ function Contacts({ data, settings, refresh, notify }) {
           }
         }
         setUploadProgress(Math.round(offset / file.size * 100));
-        setImportJob(job);
+        acceptImportJob(job);
       }
       if (controller.signal.aborted) return;
       job = await api(`/imports/uploads/${job.id}/complete`, json('POST', {}));
-      setImportJob(job);
+      acceptImportJob(job);
       localStorage.removeItem(resumeKey);
       notify('Upload complete. Contacts are importing in the background.');
     } catch (error) { if (!controller.signal.aborted) notify(error.message, 'error'); }
@@ -188,6 +291,7 @@ function Contacts({ data, settings, refresh, notify }) {
         if (key.startsWith('wishyou-upload:') && localStorage.getItem(key) === importJob.id) localStorage.removeItem(key);
       }
       setImportJob(null);
+      importStatusRef.current = null;
       setUploadProgress(0);
       notify('Upload canceled.');
     } catch (error) { notify(error.message, 'error'); }
@@ -198,7 +302,9 @@ function Contacts({ data, settings, refresh, notify }) {
     <div className="page-stack">
       <Field label="Date order for this file"><select value={dateFormat} onChange={e => setDateFormat(e.target.value)} disabled={importing}><option value="">Choose before uploading</option><option value="DMY">Day / Month / Year (DD/MM/YYYY)</option><option value="MDY">Month / Day / Year (MM/DD/YYYY)</option></select></Field>
       {importJob && <ImportProgress job={importJob} uploadProgress={uploadProgress} onCancel={cancelUpload} canceling={cancelingUpload} />}
-      {!result?.dataset ? (
+      {result === null ? (
+        <div className="panel" aria-busy={busy}>{loadError ? <><p role="alert">Could not load contacts: {loadError}</p><Button variant="ghost" onClick={() => setDatasetVersion(version => version + 1)}>Retry</Button></> : 'Loading contacts…'}</div>
+      ) : !result.dataset ? (
         <Import onChoose={importFile} busy={importing || activeImport} />
       ) : (
         <>
@@ -220,13 +326,13 @@ function Contacts({ data, settings, refresh, notify }) {
       )}
       {confirmClear && <Modal title="Clear this dataset?" onClose={() => setConfirmClear(false)}><p className="modal-copy">This removes all contacts, their dynamic columns, and past sends. Your greeting URLs in Settings stay in place.</p><div className="modal-actions"><Button variant="ghost" onClick={() => setConfirmClear(false)}>Cancel</Button><Button variant="danger" icon={Trash} onClick={clear}>Clear everything</Button></div></Modal>}
       {deleting && <Modal title="Delete contact?" onClose={deletingBusy ? () => {} : () => setDeleting(null)}><p className="modal-copy">This permanently removes {deleting.display_name || 'this contact'} and all of their delivery records. Any unsent wishes for this contact will be canceled.</p><div className="modal-actions"><Button variant="ghost" disabled={deletingBusy} onClick={() => setDeleting(null)}>Cancel</Button><Button variant="danger" icon={Trash} disabled={deletingBusy} onClick={deleteContact}>{deletingBusy ? 'Deleting…' : 'Delete contact'}</Button></div></Modal>}
-      {reviewing && <ContactGreetingReview contact={reviewing.contact} initialChannel={reviewing.channel} settings={settings} onClose={() => setReviewing(null)} notify={notify} refresh={refresh} />}
+      {reviewing && <ContactGreetingReview contact={reviewing.contact} initialChannel={reviewing.channel} settings={settings} onClose={() => setReviewing(null)} notify={notify} />}
       {editing && <Modal title="Edit contact" onClose={() => setEditing(null)}><div className="form-grid">{columns.map(column => <Field label={column} key={column}><input value={editing.data[column] ?? ''} onChange={e => setEditing({ ...editing, data: { ...editing.data, [column]: e.target.value } })} /></Field>)}</div><label className="check-row"><input type="checkbox" checked={editing.active} onChange={e => setEditing({ ...editing, active: e.target.checked })} /> Active for wishes</label><div className="modal-actions"><Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button><Button icon={FloppyDisk} onClick={saveEdit}>Save contact</Button></div></Modal>}
     </div>
   );
 }
 
-function ContactGreetingReview({ contact, initialChannel, settings, onClose, notify, refresh }) {
+function ContactGreetingReview({ contact, initialChannel, settings, onClose, notify }) {
   const [occasion, setOccasion] = useState(contact.birth_date ? 'birthday' : 'anniversary');
   const [channel, setChannel] = useState(initialChannel);
   const [review, setReview] = useState(null);
@@ -266,7 +372,6 @@ function ContactGreetingReview({ contact, initialChannel, settings, onClose, not
     try {
       await api(`/contacts/${person.id}/send-greeting`, json('POST', { occasion, channel }));
       notify(`${channel === 'sms' ? 'SMS' : 'Voice call'} queued for ${name}. Reopen this contact to check the latest provider response.`);
-      refresh();
       onClose();
     } catch (cause) {
       setError(cause.message);
@@ -599,10 +704,10 @@ export default function App() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [message, setMessage] = useState(null);
   const [tick, setTick] = useState(0);
-  const [data, setData] = useState({ dashboard: null, contacts: null, greetingUrls: [], settings: {} });
+  const [data, setData] = useState({ dashboard: null, greetingUrls: [], settings: {} });
   useEffect(() => { if (!nav.some(item => item.id === page)) setPage('dashboard'); }, [page]);
-  const notify = (text, type = 'success') => { setMessage({ text, type }); setTimeout(() => setMessage(null), 5000); };
-  const refresh = () => setTick(value => value + 1);
+  const notify = useCallback((text, type = 'success') => { setMessage({ text, type }); setTimeout(() => setMessage(null), 5000); }, []);
+  const refresh = useCallback(() => setTick(value => value + 1), []);
   const navigate = id => { setPage(id); setSidebar(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   useLayoutEffect(() => {
     const root = contentRef.current;
@@ -631,7 +736,32 @@ export default function App() {
     return () => { changes.disconnect(); observer.disconnect(); };
   }, [page, user]);
   useEffect(() => { api('/auth/me').then(setUser).catch(() => setUser(null)); }, []);
-  useEffect(() => { if (!user) return; let live = true; Promise.allSettled(['/dashboard', '/contacts?limit=10', '/greeting-urls', '/settings'].map(path => api(path))).then(results => { if (!live) return; const keys = ['dashboard', 'contacts', 'greetingUrls', 'settings']; setData(previous => { const next = { ...previous }; results.forEach((result, i) => { if (result.status === 'fulfilled') next[keys[i]] = result.value; }); return next; }); const failed = results.find(result => result.status === 'rejected'); if (failed) notify(failed.reason.message, 'error'); }); return () => { live = false; }; }, [user, tick]);
+  useEffect(() => {
+    if (!user || page === 'contacts') return;
+    const controller = new AbortController();
+    const entries = page === 'dashboard'
+      ? [['dashboard', '/dashboard']]
+      : [['greetingUrls', '/greeting-urls'], ['settings', '/settings']];
+    Promise.allSettled(entries.map(([, path]) => api(path, { signal: controller.signal }))).then(results => {
+      if (controller.signal.aborted) return;
+      setData(previous => {
+        const next = { ...previous };
+        results.forEach((result, index) => { if (result.status === 'fulfilled') next[entries[index][0]] = result.value; });
+        return next;
+      });
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed) notify(failed.reason.message, 'error');
+    });
+    return () => controller.abort();
+  }, [user, page, tick, notify]);
+  useEffect(() => {
+    if (!user || page !== 'contacts') return;
+    const controller = new AbortController();
+    api('/settings', { signal: controller.signal })
+      .then(settings => { if (!controller.signal.aborted) setData(previous => ({ ...previous, settings })); })
+      .catch(error => { if (!controller.signal.aborted) notify(error.message, 'error'); });
+    return () => controller.abort();
+  }, [user, page, notify]);
   const today = useMemo(() => new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), []);
   async function logout() {
     setLoggingOut(true);
@@ -643,5 +773,5 @@ export default function App() {
   if (user === undefined) return <div className="boot-screen"><span className="brand-mark"><Heart weight="fill" size={23} /></span><span>wishyou<span className="brand-dot">.</span></span></div>;
   if (!user) return <><Login onLogin={setUser} notify={notify} /><Notice message={message} onClose={() => setMessage(null)} /></>;
   const common = { refresh, navigate, notify };
-  return <div className="app-shell"><aside className={`sidebar ${sidebar ? 'sidebar-open' : ''}`}><div className="brand"><span className="brand-mark"><Gift weight="fill" size={21} /></span><span>wishyou<span className="brand-dot">.</span>com</span></div><div className="sidebar-caption">YOUR WORKSPACE</div><nav>{nav.map(item => <button key={item.id} className={`nav-link ${page === item.id ? 'selected' : ''}`} onClick={() => navigate(item.id)}><item.icon size={21} weight={page === item.id ? 'fill' : 'regular'} /><span>{item.label}</span>{page === item.id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-help"><span><Cake size={21} weight="duotone" /></span><strong>Make it memorable.</strong><p>Every occasion deserves a thoughtful wish.</p><Confetti className="sidebar-help-celebration" size={67} weight="duotone" aria-hidden="true" /></div><button className="logout" onClick={() => setConfirmLogout(true)}><SignOut size={20} /> Sign out</button></div></aside>{sidebar && <div className="mobile-overlay" onClick={() => setSidebar(false)} />}<main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="Open menu"><List size={23} /></button><div className="breadcrumb">Workspace <span>/</span> <strong>{nav.find(item => item.id === page)?.label}</strong></div></div><div className="topbar-right"><span className="today-label"><CalendarBlank size={17} /> {today}</span><span className="top-avatar">{user.email[0].toUpperCase()}</span></div></header><div key={page} ref={contentRef} className="content" data-page={page}>{page === 'dashboard' && <div className="page-intro"><div><h1>Good to see you!</h1><p>Here is what is happening with your wishes.</p></div><div className="intro-accent"><Sparkle size={20} weight="fill" /> Make someone's day</div></div>}{page === 'dashboard' && <Dashboard data={data.dashboard} greetingUrls={data.greetingUrls} settings={data.settings} navigate={navigate} />}{page === 'contacts' && <Contacts data={data.contacts} settings={data.settings} {...common} />}{page === 'settings' && <Settings settings={data.settings} greetingUrls={data.greetingUrls} refresh={refresh} notify={notify} />}</div></main><Notice message={message} onClose={() => setMessage(null)} />{confirmLogout && <SignOutConfirm onCancel={() => setConfirmLogout(false)} onConfirm={logout} busy={loggingOut} />}</div>;
+  return <div className="app-shell"><aside className={`sidebar ${sidebar ? 'sidebar-open' : ''}`}><div className="brand"><span className="brand-mark"><Gift weight="fill" size={21} /></span><span>wishyou<span className="brand-dot">.</span>com</span></div><div className="sidebar-caption">YOUR WORKSPACE</div><nav>{nav.map(item => <button key={item.id} className={`nav-link ${page === item.id ? 'selected' : ''}`} onClick={() => navigate(item.id)}><item.icon size={21} weight={page === item.id ? 'fill' : 'regular'} /><span>{item.label}</span>{page === item.id && <span className="nav-indicator" />}</button>)}</nav><div className="sidebar-bottom"><div className="sidebar-help"><span><Cake size={21} weight="duotone" /></span><strong>Make it memorable.</strong><p>Every occasion deserves a thoughtful wish.</p><Confetti className="sidebar-help-celebration" size={67} weight="duotone" aria-hidden="true" /></div><button className="logout" onClick={() => setConfirmLogout(true)}><SignOut size={20} /> Sign out</button></div></aside>{sidebar && <div className="mobile-overlay" onClick={() => setSidebar(false)} />}<main className="main-area"><header className="topbar"><div className="topbar-left"><button className="mobile-menu" onClick={() => setSidebar(true)} aria-label="Open menu"><List size={23} /></button><div className="breadcrumb">Workspace <span>/</span> <strong>{nav.find(item => item.id === page)?.label}</strong></div></div><div className="topbar-right"><span className="today-label"><CalendarBlank size={17} /> {today}</span><span className="top-avatar">{user.email[0].toUpperCase()}</span></div></header><div key={page} ref={contentRef} className="content" data-page={page}>{page === 'dashboard' && <div className="page-intro"><div><h1>Good to see you!</h1><p>Here is what is happening with your wishes.</p></div><div className="intro-accent"><Sparkle size={20} weight="fill" /> Make someone's day</div></div>}{page === 'dashboard' && <Dashboard data={data.dashboard} navigate={navigate} />}{page === 'contacts' && <Contacts settings={data.settings} refresh={refresh} reloadKey={tick} notify={notify} />}{page === 'settings' && <Settings settings={data.settings} greetingUrls={data.greetingUrls} refresh={refresh} notify={notify} />}</div></main><Notice message={message} onClose={() => setMessage(null)} />{confirmLogout && <SignOutConfirm onCancel={() => setConfirmLogout(false)} onConfirm={logout} busy={loggingOut} />}</div>;
 }

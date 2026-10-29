@@ -18,6 +18,8 @@ An admin panel for importing dynamic contact spreadsheets and sending birthday o
 
 The database tables are created automatically by the API at startup. Keep `.env` private and back up the database before production use.
 
+The Contacts list uses cursor pagination (25 rows by default). Exact search totals are calculated when a search starts or this admin changes its data, then reused while paging through that search. Overview, Contacts, and Settings fetch their own data; import progress is checked every three seconds only while a job is active. The first start after this update builds additional PostgreSQL indexes concurrently. On an existing large database, allow time and disk space for that one-time build before the API becomes ready.
+
 ## First-use flow
 
 1. Sign in with the admin credentials from `.env`.
