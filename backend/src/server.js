@@ -5,11 +5,12 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { passwordVersion } from './admin.js';
 import { q, pool, setupDatabase, transaction } from './db.js';
 import { transformRows } from './imports.js';
 import { assertSafeEndpoint, buildReadyUrl, decryptSecret, encryptSecret, sendProvider, validateReadyUrl } from './providers.js';
-import { createCampaign, manualSendAllowance, processDueDeliveries, scheduleTodaysWishes, stopDeliveryWorker } from './queue.js';
-import { installUploadRoutes, recoverImports, stopImports } from './uploads.js';
+import { createCampaign, manualSendAllowance, processDueDeliveries, queueWorkerHealth, scheduleTodaysWishes, stopDeliveryWorker } from './queue.js';
+import { importWorkerState, installUploadRoutes, recoverImports, stopImports, verifyImportRuntime } from './uploads.js';
 import { clientError, errorResponse } from './api-errors.js';
 import { createContactsCursor, readContactsCursor, validDatabaseId } from './pagination.js';
 import { manualContactRecord, manualContactSchema } from './manual-contacts.js';
@@ -22,6 +23,8 @@ if (process.env.JWT_SECRET.length < 32 || process.env.ADMIN_PASSWORD.length < 12
 }
 
 const app = express();
+const configuredAdminEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
+let configuredAdminVersion = null;
 app.disable('x-powered-by');
 if (['1', '2'].includes(process.env.TRUST_PROXY)) app.set('trust proxy', Number(process.env.TRUST_PROXY));
 app.use(cors({ origin: process.env.WEB_ORIGIN || 'http://localhost:5173', credentials: true }));
@@ -30,7 +33,16 @@ app.use(cookieParser());
 let shuttingDown = false;
 app.get('/api/health', async (_req, res) => {
   if (shuttingDown) return res.status(503).json({ ok: false });
-  try { await pool.query({ text: 'SELECT 1', query_timeout: 3000 }); res.json({ ok: true }); }
+  try {
+    const job = await pool.query({ text: "SELECT status,updated_at FROM import_jobs WHERE status IN ('queued','processing','waiting_for_sends') ORDER BY created_at LIMIT 1", query_timeout: 3000 });
+    const importer = importWorkerState();
+    const pending = job.rows[0];
+    const age = pending ? Date.now() - new Date(pending.updated_at).getTime() : 0;
+    const importReady = importer.ready && (!pending || (pending.status === 'queued' ? age < 2 * 60 * 1000 : importer.active || age < 5 * 60 * 1000));
+    const checks = { database: true, importer: importReady, ...queueWorkerHealth({ importActive: importer.active }) };
+    const ok = Object.values(checks).every(Boolean);
+    res.status(ok ? 200 : 503).json({ ok, checks });
+  }
   catch { res.status(503).json({ ok: false }); }
 });
 
@@ -65,15 +77,19 @@ function auth(req, res, next) {
     const token = req.cookies.wishyou_session;
     if (!token) return res.status(401).json({ error: 'Please sign in.' });
     req.admin = jwt.verify(token, process.env.JWT_SECRET);
+    if (req.admin.email !== configuredAdminEmail || req.admin.passwordVersion !== configuredAdminVersion) {
+      return res.status(401).json({ error: 'Your session has expired.' });
+    }
     next();
   } catch { res.status(401).json({ error: 'Your session has expired.' }); }
 }
 
 app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false }), asyncRoute(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
+  if (email !== configuredAdminEmail) return res.status(401).json({ error: 'Invalid email or password.' });
   const admin = (await q('SELECT * FROM admins WHERE email=$1', [email])).rows[0];
   if (!admin || !await bcrypt.compare(String(req.body.password || ''), admin.password_hash)) return res.status(401).json({ error: 'Invalid email or password.' });
-  const token = jwt.sign({ id: admin.id, email: admin.email }, process.env.JWT_SECRET, { expiresIn: '12h' });
+  const token = jwt.sign({ id: admin.id, email: admin.email, passwordVersion: configuredAdminVersion }, process.env.JWT_SECRET, { expiresIn: '12h' });
   res.cookie('wishyou_session', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 12 * 60 * 60 * 1000 });
   res.json({ email: admin.email });
 }));
@@ -86,7 +102,7 @@ app.get('/api/dashboard', asyncRoute(async (_, res) => {
   const [greetingCount, campaigns, deliveries, dataset, recentFailures] = await Promise.all([
     q('SELECT count(*)::int AS total FROM wish_templates WHERE settings_slot=true AND ready_url_encrypted IS NOT NULL'),
     q('SELECT EXISTS(SELECT 1 FROM campaigns) AS present'),
-    q("SELECT status, count(*)::int AS total FROM deliveries GROUP BY status"),
+    q('SELECT sent,failed FROM delivery_totals WHERE id=true'),
     q('SELECT id,name,row_count,created_at FROM datasets ORDER BY id DESC LIMIT 1'),
     q(`SELECT d.id,d.contact_name,d.phone,c.occasion,c.channel,d.created_at
       FROM deliveries d JOIN campaigns c ON c.id=d.campaign_id
@@ -103,7 +119,8 @@ app.get('/api/dashboard', asyncRoute(async (_, res) => {
   ]);
   res.json({ contacts: Number(dataset.rows[0]?.row_count || 0), greetingCount: greetingCount.rows[0].total,
     birthdayEnabled: Boolean(schedule.birthdayEnabled), anniversaryEnabled: Boolean(schedule.anniversaryEnabled),
-    hasCampaigns: campaigns.rows[0].present, deliveries: Object.fromEntries(deliveries.rows.map(row => [row.status, row.total])),
+    hasCampaigns: campaigns.rows[0].present,
+    deliveries: { sent: Number(deliveries.rows[0]?.sent || 0), failed: Number(deliveries.rows[0]?.failed || 0) },
     recentFailures: recentFailures.rows, dataset: dataset.rows[0] || null, todayCount: todayCount.rows[0].total, today: today.rows });
 }));
 
@@ -392,6 +409,9 @@ app.use((error, _req, res, _next) => {
 });
 
 await setupDatabase();
+const currentAdmin = (await q('SELECT password_hash FROM admins WHERE email=$1', [configuredAdminEmail])).rows[0];
+configuredAdminVersion = passwordVersion(currentAdmin.password_hash);
+await verifyImportRuntime();
 await recoverImports();
 async function markStaleDeliveries() {
   await q(`UPDATE deliveries SET status='failed', sending_started_at=NULL,

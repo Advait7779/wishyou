@@ -28,6 +28,24 @@ const json = (method, body) => ({ method, body: JSON.stringify(body) });
 const prettyDate = value => value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 const prettyTime = value => value ? new Date(value).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 
+function contactFormSchema(dataset, serverSchema) {
+  if (serverSchema) return serverSchema;
+  const columns = [...(dataset?.columns || [])];
+  const mapping = { ...(dataset?.mapping || {}) };
+  const ensureColumn = label => {
+    const existing = columns.find(column => column.toLowerCase() === label.toLowerCase());
+    if (existing) return existing;
+    columns.push(label);
+    return label;
+  };
+  mapping.name ||= ensureColumn('Name');
+  mapping.phone ||= ensureColumn('Contact');
+  const gender = columns.find(column => /^(gender|sex)$/i.test(column.trim())) || ensureColumn('Gender');
+  mapping.birthday ||= ensureColumn('DOB');
+  mapping.anniversary ||= ensureColumn('Anniversary');
+  return { columns, mapping, gender };
+}
+
 function Button({ children, variant = 'primary', icon: Icon, ...props }) {
   return <button className={`button button-${variant}`} {...props}>{Icon && <Icon size={18} weight="bold" />}{children}</button>;
 }
@@ -294,9 +312,10 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
     finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; setImporting(false); }
   }
   async function cancelUpload() {
-    if (cancelingUpload || importJob?.status !== 'uploading') return;
+    if (cancelingUpload || !['uploading', 'failed'].includes(importJob?.status)) return;
+    const failed = importJob.status === 'failed';
     setCancelingUpload(true);
-    uploadControllerRef.current?.abort();
+    if (!failed) uploadControllerRef.current?.abort();
     try {
       await api(`/imports/uploads/${importJob.id}`, { method: 'DELETE' });
       for (const key of Object.keys(localStorage)) {
@@ -305,7 +324,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
       setImportJob(null);
       importStatusRef.current = null;
       setUploadProgress(0);
-      notify('Upload canceled.');
+      notify(failed ? 'Failed import removed.' : 'Upload canceled.');
     } catch (error) { notify(error.message, 'error'); }
     finally { setCancelingUpload(false); }
   }
@@ -340,7 +359,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
       {confirmClear && <Modal title="Clear this dataset?" onClose={() => setConfirmClear(false)}><p className="modal-copy">This removes all contacts, their dynamic columns, and past sends. Your greeting URLs in Settings stay in place.</p><div className="modal-actions"><Button variant="ghost" onClick={() => setConfirmClear(false)}>Cancel</Button><Button variant="danger" icon={Trash} onClick={clear}>Clear everything</Button></div></Modal>}
       {deleting && <Modal title="Delete contact?" onClose={deletingBusy ? () => {} : () => setDeleting(null)}><p className="modal-copy">This permanently removes {deleting.display_name || 'this contact'} and all of their delivery records. Any unsent wishes for this contact will be canceled.</p><div className="modal-actions"><Button variant="ghost" disabled={deletingBusy} onClick={() => setDeleting(null)}>Cancel</Button><Button variant="danger" icon={Trash} disabled={deletingBusy} onClick={deleteContact}>{deletingBusy ? 'Deleting…' : 'Delete contact'}</Button></div></Modal>}
       {reviewing && <ContactGreetingReview contact={reviewing.contact} initialChannel={reviewing.channel} settings={settings} onClose={() => setReviewing(null)} notify={notify} />}
-      {adding && result?.manualSchema && <ManualContactForm schema={result.manualSchema} datasetId={result.dataset?.id || null} onClose={() => setAdding(false)} onCreated={addedContact} />}
+      {adding && <ManualContactForm schema={contactFormSchema(result?.dataset, result?.manualSchema)} datasetId={result?.dataset?.id || null} onClose={() => setAdding(false)} onCreated={addedContact} />}
       {editing && <Modal title="Edit contact" onClose={() => setEditing(null)}><div className="form-grid">{columns.map(column => <Field label={column} key={column}><input value={editing.data[column] ?? ''} onChange={e => setEditing({ ...editing, data: { ...editing.data, [column]: e.target.value } })} /></Field>)}</div><label className="check-row"><input type="checkbox" checked={editing.active} onChange={e => setEditing({ ...editing, active: e.target.checked })} /> Active for wishes</label><div className="modal-actions"><Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button><Button icon={FloppyDisk} onClick={saveEdit}>Save contact</Button></div></Modal>}
     </div>
   );
@@ -365,7 +384,7 @@ function ManualContactForm({ schema, datasetId, onClose, onCreated }) {
     try {
       await api('/contacts', json('POST', { datasetId, data: record.data, active: record.active }));
       onCreated();
-    } catch (cause) { setError(cause.message); }
+    } catch (cause) { setError(cause.status === 404 ? 'The add record API is unavailable. Restart or redeploy the backend, then try again.' : cause.message); }
     finally { setBusy(false); }
   }
 
@@ -520,7 +539,7 @@ function ImportProgress({ job, uploadProgress, onCancel, canceling }) {
   }[job.status] || job.status;
   return <div className="panel import-progress" role="status"><strong>{label}</strong><span>{job.filename}</span>
     {uploading && <progress value={percent} max="100" aria-label="Upload progress" />}
-    {uploading && <Button variant="ghost" disabled={canceling} onClick={onCancel}>{canceling ? 'Canceling…' : 'Cancel upload'}</Button>}
+    {(uploading || job.status === 'failed') && <Button variant="ghost" disabled={canceling} onClick={onCancel}>{canceling ? 'Removing…' : uploading ? 'Cancel upload' : 'Dismiss failed import'}</Button>}
     {job.status === 'processing' && <small>{job.imported.toLocaleString()} valid · {job.skipped.toLocaleString()} skipped</small>}
     {job.error && <p className="review-error">{job.error}</p>}
   </div>;

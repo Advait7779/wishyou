@@ -305,7 +305,9 @@ def run(job_id):
             raise ValueError("The uploaded file is missing or incomplete.")
         with conn.cursor() as cur:
             cur.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(stage)))
-            cur.execute(sql.SQL("CREATE TABLE {} (data JSONB NOT NULL,display_name TEXT,phone TEXT PRIMARY KEY,"
+            # Staging is fully reproducible from the retained upload, so avoid
+            # writing its rows to PostgreSQL WAL before the final activation.
+            cur.execute(sql.SQL("CREATE UNLOGGED TABLE {} (data JSONB NOT NULL,display_name TEXT,phone TEXT PRIMARY KEY,"
                                 "birth_date DATE,anniversary_date DATE)").format(sql.Identifier(stage)))
             cur.execute("CREATE TEMP TABLE import_batch (sequence_no BIGINT GENERATED ALWAYS AS IDENTITY,data JSONB,display_name TEXT,phone TEXT,birth_date DATE,anniversary_date DATE) ON COMMIT PRESERVE ROWS")
         conn.commit()

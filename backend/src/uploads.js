@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { pool, q } from './db.js';
 import { clientError } from './api-errors.js';
 
@@ -19,7 +20,21 @@ let activeWorker = null;
 let activeWorkerDone = null;
 let claimingWorker = false;
 let stopping = false;
+let importSpawnError = false;
 const timers = [];
+const execFileAsync = promisify(execFile);
+
+async function pythonBinary() {
+  return process.env.PYTHON_BIN || await fs.access(bundledPython).then(() => bundledPython).catch(() => 'python');
+}
+
+export async function verifyImportRuntime() {
+  await execFileAsync(await pythonBinary(), ['-c', 'import psycopg2, openpyxl'], { timeout: 10000 });
+}
+
+export function importWorkerState() {
+  return { active: Boolean(activeWorker), ready: !importSpawnError };
+}
 
 export function validateUpload(filename, size) {
   const cleanName = String(filename || '').split(/[\\/]/).pop()?.replace(/[\u0000-\u001f]/g, '').trim();
@@ -59,7 +74,7 @@ export async function runNextImport() {
     await q("UPDATE import_jobs SET status='queued',updated_at=now() WHERE id=$1", [job.id]);
     return;
   }
-  const python = process.env.PYTHON_BIN || await fs.access(bundledPython).then(() => bundledPython).catch(() => 'python');
+  const python = await pythonBinary();
   if (stopping) {
     await q("UPDATE import_jobs SET status='queued',updated_at=now() WHERE id=$1", [job.id]);
     return;
@@ -70,9 +85,11 @@ export async function runNextImport() {
   activeWorker = child;
   let resolveWorkerDone;
   activeWorkerDone = new Promise(resolve => { resolveWorkerDone = resolve; });
+  child.on('spawn', () => { importSpawnError = false; });
   child.stdout.on('data', chunk => process.stdout.write(`[import ${job.id}] ${chunk}`));
   child.stderr.on('data', chunk => process.stderr.write(`[import ${job.id}] ${chunk}`));
   child.on('error', async error => {
+    importSpawnError = true;
     console.error('Import worker could not start:', error);
     await q("UPDATE import_jobs SET status='failed', error=$2, updated_at=now() WHERE id=$1 AND status IN ('processing','waiting_for_sends')", [job.id, error.message]).catch(console.error);
   });
@@ -84,6 +101,9 @@ export async function runNextImport() {
       } else {
         if (code !== 0) {
           await q("UPDATE import_jobs SET status='failed', error=COALESCE(error,$2), updated_at=now() WHERE id=$1 AND status IN ('processing','waiting_for_sends')", [job.id, `Importer exited with code ${code}`]);
+          await fs.unlink(uploadPath(job.id)).catch(error => {
+            if (error.code !== 'ENOENT') console.error('Failed import file cleanup:', error);
+          });
         }
         runNextImport().catch(error => console.error('Import runner:', error));
       }
@@ -121,6 +141,11 @@ export async function recoverImports() {
     catch (error) { console.error('Import runner:', error); }
   }, 30000));
   const cleanAbandoned = async () => {
+    // Failed imports cannot be resumed; keep their error report but free the file.
+    const failed = (await q("SELECT id FROM import_jobs WHERE status='failed'")).rows;
+    for (const row of failed) await fs.unlink(uploadPath(row.id)).catch(error => {
+      if (error.code !== 'ENOENT') console.error('Failed import file cleanup:', error);
+    });
     const old = (await q("DELETE FROM import_jobs WHERE status IN ('uploading','failed') AND updated_at < now() - interval '7 days' RETURNING id")).rows;
     for (const row of old) await fs.unlink(uploadPath(row.id)).catch(error => {
       if (error.code !== 'ENOENT') console.error('Upload cleanup:', error);
