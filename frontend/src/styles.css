@@ -109,14 +109,23 @@
 /* Overview spacing */
 .content[data-page="dashboard"] { padding-top: 28px; }
 .content[data-page="dashboard"] .page-intro { margin-bottom: 23px; }
-.content[data-page="dashboard"] .welcome-banner { min-height: 248px; padding: 26px 45px; }
+.content[data-page="dashboard"] .welcome-banner { min-height: 198px; padding: 22px 32px; }
 .content[data-page="dashboard"] .welcome-banner h2 { margin: 10px 0 8px; }
-.content[data-page="dashboard"] .welcome-banner p { margin-bottom: 17px; }
-.content[data-page="dashboard"] .banner-illustration { top: 50%; }
+.content[data-page="dashboard"] .welcome-banner p { margin-bottom: 0; }
+.content[data-page="dashboard"] .welcome-banner::before { width: 320px; height: 320px; right: -10px; top: -175px; }
+.content[data-page="dashboard"] .welcome-banner::after { width: 240px; height: 240px; right: 30px; top: -130px; }
+.content[data-page="dashboard"] .banner-illustration { top: 50%; right: 8%; width: 140px; height: 140px; }
+.content[data-page="dashboard"] .orb-main { width: 108px; height: 108px; top: 16px; box-shadow: 0 0 0 16px #ffffff12, 0 0 0 34px #ffffff0d; }
+.content[data-page="dashboard"] .orb-small { width: 42px; height: 42px; left: -16px; top: 4px; }
+.content[data-page="dashboard"] .orb-star { right: -18px; top: -6px; }
 @media(max-width:560px) {
   .content[data-page="dashboard"] { padding-top: 20px; }
   .content[data-page="dashboard"] .page-intro { margin-bottom: 19px; }
-  .content[data-page="dashboard"] .welcome-banner { min-height: 235px; padding: 26px 24px; }
+  .content[data-page="dashboard"] .welcome-banner { min-height: 190px; padding: 22px 20px; }
+  .content[data-page="dashboard"] .welcome-banner p { max-width: calc(100% - 70px); }
+  .content[data-page="dashboard"] .banner-illustration { width: 100px; height: 100px; right: -12px; top: 62%; opacity: .45; }
+  .content[data-page="dashboard"] .orb-main { width: 80px; height: 80px; top: 10px; box-shadow: 0 0 0 12px #ffffff12, 0 0 0 25px #ffffff0d; }
+  .content[data-page="dashboard"] .orb-small { width: 32px; height: 32px; left: -12px; }
 }
 
 /* Use the celebratory serif for prominent section headings. */
