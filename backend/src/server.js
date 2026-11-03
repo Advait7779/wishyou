@@ -12,6 +12,7 @@ import { createCampaign, manualSendAllowance, processDueDeliveries, scheduleToda
 import { installUploadRoutes, recoverImports, stopImports } from './uploads.js';
 import { clientError, errorResponse } from './api-errors.js';
 import { createContactsCursor, readContactsCursor, validDatabaseId } from './pagination.js';
+import { manualContactRecord, manualContactSchema } from './manual-contacts.js';
 
 if (!process.env.DATABASE_URL || !process.env.JWT_SECRET || !process.env.CONFIG_ENCRYPTION_KEY || !process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
   throw new Error('Set DATABASE_URL, JWT_SECRET, CONFIG_ENCRYPTION_KEY, ADMIN_EMAIL, and ADMIN_PASSWORD in backend/.env.');
@@ -115,9 +116,10 @@ app.get('/api/contacts', asyncRoute(async (req, res) => {
   const includeTotal = req.query.includeTotal !== 'false';
   if (search && search.length < 3) return res.status(400).json({ error: 'Enter at least 3 characters to search contacts.' });
   if (datasetId && !validDatabaseId(datasetId)) return res.status(400).json({ error: 'Invalid dataset ID.' });
-  const dataset = (await q('SELECT id,name,columns,row_count,created_at FROM datasets ORDER BY id DESC LIMIT 1')).rows[0] || null;
+  const dataset = (await q('SELECT id,name,columns,mapping,row_count,created_at FROM datasets ORDER BY id DESC LIMIT 1')).rows[0] || null;
   if (datasetId && String(dataset?.id) !== datasetId) return res.status(409).json({ error: 'The contact dataset changed. Reloading the first page.' });
-  if (!dataset) return res.json({ dataset: null, items: [], total: 0, limit, nextCursor: null });
+  const manualSchema = manualContactSchema(dataset);
+  if (!dataset) return res.json({ dataset: null, manualSchema, items: [], total: 0, limit, nextCursor: null });
   const beforeId = before ? readContactsCursor(before, { datasetId: dataset.id, search }) : null;
   const params = [dataset.id];
   const clauses = ['dataset_id=$1'];
@@ -133,16 +135,47 @@ app.get('/api/contacts', asyncRoute(async (req, res) => {
   ]);
   const hasNext = items.rows.length > limit;
   const pageItems = items.rows.slice(0, limit);
-  res.json({ dataset, items: pageItems, total: count ? Number(count.rows[0].total) : null, limit,
+  res.json({ dataset, manualSchema, items: pageItems, total: count ? Number(count.rows[0].total) : null, limit,
     nextCursor: hasNext ? createContactsCursor({ id: pageItems.at(-1).id, datasetId: dataset.id, search }) : null });
+}));
+
+app.post('/api/contacts', asyncRoute(async (req, res) => {
+  const expectedDatasetId = req.body?.datasetId == null ? null : String(req.body.datasetId);
+  if (expectedDatasetId && !validDatabaseId(expectedDatasetId)) return res.status(400).json({ error: 'Invalid dataset ID.' });
+  if (req.body?.active !== undefined && typeof req.body.active !== 'boolean') return res.status(400).json({ error: 'Choose a valid contact status.' });
+  const result = await transaction(async client => {
+    await client.query('SELECT pg_advisory_xact_lock(7286, 1)');
+    const importing = await client.query("SELECT 1 FROM import_jobs WHERE status IN ('uploading','queued','processing','waiting_for_sends') LIMIT 1");
+    if (importing.rowCount) throw clientError('Finish the current import before adding a contact.', 409);
+    let dataset = (await client.query('SELECT * FROM datasets ORDER BY id DESC LIMIT 1 FOR UPDATE')).rows[0] || null;
+    if ((dataset ? String(dataset.id) : null) !== expectedDatasetId) throw clientError('The contact dataset changed. Reload and try again.', 409);
+    const schema = manualContactSchema(dataset);
+    const record = manualContactRecord(schema, req.body?.data);
+    if (dataset) {
+      const duplicate = await client.query('SELECT 1 FROM contacts WHERE dataset_id=$1 AND phone=$2 LIMIT 1', [dataset.id, record.phone]);
+      if (duplicate.rowCount) throw clientError('A contact with this number already exists.', 409);
+      dataset = (await client.query('UPDATE datasets SET columns=$2,mapping=$3 WHERE id=$1 RETURNING *',
+        [dataset.id, JSON.stringify(schema.columns), JSON.stringify(schema.mapping)])).rows[0];
+    } else {
+      dataset = (await client.query('INSERT INTO datasets(name,columns,mapping,row_count) VALUES($1,$2,$3,0) RETURNING *',
+        ['Manual contacts', JSON.stringify(schema.columns), JSON.stringify(schema.mapping)])).rows[0];
+    }
+    const contact = (await client.query('INSERT INTO contacts(dataset_id,data,display_name,phone,birth_date,anniversary_date,active) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [dataset.id, record.data, record.name, record.phone, record.birth, record.anniversary, req.body.active !== false])).rows[0];
+    await client.query('UPDATE datasets SET row_count=row_count+1 WHERE id=$1', [dataset.id]);
+    await client.query('INSERT INTO audit_logs(action,details) VALUES($1,$2)', ['contact.created', { id: contact.id, datasetId: dataset.id }]);
+    return { contact, datasetId: dataset.id };
+  });
+  res.status(201).json(result);
 }));
 
 app.patch('/api/contacts/:id', asyncRoute(async (req, res) => {
   const dataset = (await q('SELECT * FROM datasets ORDER BY id DESC LIMIT 1')).rows[0];
   if (!dataset) return res.status(404).json({ error: 'No dataset is active.' });
   const data = req.body.data;
-  if (!data || typeof data !== 'object' || dataset.columns.some(header => !(header in data))) return res.status(400).json({ error: 'Include every active column.' });
-  const transformed = transformRows({ headers: dataset.columns, rows: [dataset.columns.map(header => data[header])] }, dataset.mapping);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return res.status(400).json({ error: 'Include the contact fields.' });
+  const transformed = transformRows({ headers: dataset.columns,
+    rows: [dataset.columns.map(header => Object.hasOwn(data, header) ? data[header] : '')] }, dataset.mapping);
   if (transformed.invalid.length) return res.status(400).json({ error: transformed.invalid[0].reasons.join(', ') });
   const record = transformed.valid[0];
   const result = await q('UPDATE contacts SET data=$1,display_name=$2,phone=$3,birth_date=$4,anniversary_date=$5,active=$6 WHERE id=$7 RETURNING *', [record.data, record.name, record.phone, record.birth, record.anniversary, req.body.active !== false, req.params.id]);

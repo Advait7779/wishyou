@@ -89,6 +89,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [reviewing, setReviewing] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   useEffect(() => {
@@ -217,6 +218,17 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
     try { await api(`/contacts/${editing.id}`, json('PATCH', { data: editing.data, active: editing.active })); setEditing(null); notify('Contact updated.'); refresh(); }
     catch (error) { notify(error.message, 'error'); }
   }
+  function addedContact() {
+    setAdding(false);
+    setSearch('');
+    setPage(1);
+    setCursor(null);
+    setCursorStack([]);
+    datasetIdRef.current = null;
+    totalCacheRef.current = null;
+    refresh();
+    notify('Contact added.');
+  }
   async function deleteContact() {
     if (!deleting || deletingBusy) return;
     setDeletingBusy(true);
@@ -305,7 +317,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
       {result === null ? (
         <div className="panel" aria-busy={busy}>{loadError ? <><p role="alert">Could not load contacts: {loadError}</p><Button variant="ghost" onClick={() => setDatasetVersion(version => version + 1)}>Retry</Button></> : 'Loading contacts…'}</div>
       ) : !result.dataset ? (
-        <Import onChoose={importFile} busy={importing || activeImport} />
+        <Import onChoose={importFile} onAdd={() => setAdding(true)} busy={importing || activeImport} />
       ) : (
         <>
           <div className="section-top"><div><span className="eyebrow">YOUR PEOPLE</span><h2>Contact directory</h2><p>{result.total.toLocaleString()} contacts from {result.dataset.name}</p></div></div>
@@ -314,6 +326,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
             <div className="search-box"><MagnifyingGlass size={19} /><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); setCursor(null); setCursorStack([]); }} placeholder="Search 3+ characters in any column…" /></div>
             <div className="table-toolbar-actions">
               <Button variant="ghost" icon={Trash} onClick={() => setConfirmClear(true)}>Clear dataset</Button>
+              <Button variant="soft" icon={Plus} disabled={activeImport} onClick={() => setAdding(true)}>Add record</Button>
               <input ref={fileInputRef} type="file" accept=".csv,.xlsx" className="visually-hidden" aria-label="Choose another contacts file" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; importFile(file); }} />
               <Button icon={UploadSimple} disabled={importing || activeImport} onClick={() => fileInputRef.current?.click()}>{activeImport ? 'Import in progress' : 'Import more'}</Button>
             </div>
@@ -327,9 +340,55 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
       {confirmClear && <Modal title="Clear this dataset?" onClose={() => setConfirmClear(false)}><p className="modal-copy">This removes all contacts, their dynamic columns, and past sends. Your greeting URLs in Settings stay in place.</p><div className="modal-actions"><Button variant="ghost" onClick={() => setConfirmClear(false)}>Cancel</Button><Button variant="danger" icon={Trash} onClick={clear}>Clear everything</Button></div></Modal>}
       {deleting && <Modal title="Delete contact?" onClose={deletingBusy ? () => {} : () => setDeleting(null)}><p className="modal-copy">This permanently removes {deleting.display_name || 'this contact'} and all of their delivery records. Any unsent wishes for this contact will be canceled.</p><div className="modal-actions"><Button variant="ghost" disabled={deletingBusy} onClick={() => setDeleting(null)}>Cancel</Button><Button variant="danger" icon={Trash} disabled={deletingBusy} onClick={deleteContact}>{deletingBusy ? 'Deleting…' : 'Delete contact'}</Button></div></Modal>}
       {reviewing && <ContactGreetingReview contact={reviewing.contact} initialChannel={reviewing.channel} settings={settings} onClose={() => setReviewing(null)} notify={notify} />}
+      {adding && result?.manualSchema && <ManualContactForm schema={result.manualSchema} datasetId={result.dataset?.id || null} onClose={() => setAdding(false)} onCreated={addedContact} />}
       {editing && <Modal title="Edit contact" onClose={() => setEditing(null)}><div className="form-grid">{columns.map(column => <Field label={column} key={column}><input value={editing.data[column] ?? ''} onChange={e => setEditing({ ...editing, data: { ...editing.data, [column]: e.target.value } })} /></Field>)}</div><label className="check-row"><input type="checkbox" checked={editing.active} onChange={e => setEditing({ ...editing, active: e.target.checked })} /> Active for wishes</label><div className="modal-actions"><Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button><Button icon={FloppyDisk} onClick={saveEdit}>Save contact</Button></div></Modal>}
     </div>
   );
+}
+
+function ManualContactForm({ schema, datasetId, onClose, onCreated }) {
+  const [record, setRecord] = useState({ data: Object.fromEntries(schema.columns.map(column => [column, ''])), active: true });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const { mapping } = schema;
+  const columns = [...new Set([mapping.name, mapping.phone, schema.gender, mapping.birthday, mapping.anniversary, ...schema.columns].filter(Boolean))];
+
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (!record.data[mapping.birthday] && !record.data[mapping.anniversary]) {
+      setError('Enter a birthdate or anniversary date.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api('/contacts', json('POST', { datasetId, data: record.data, active: record.active }));
+      onCreated();
+    } catch (cause) { setError(cause.message); }
+    finally { setBusy(false); }
+  }
+
+  return <Modal title="Add record" onClose={busy ? () => {} : onClose} className="manual-contact-modal">
+    <form onSubmit={submit}>
+      <div className="form-grid">
+        {columns.map(column => {
+          const dateField = column === mapping.birthday || column === mapping.anniversary;
+          const required = column === mapping.name || column === mapping.phone;
+          return <Field label={column} key={column}><input
+            type={dateField ? 'date' : column === mapping.phone ? 'tel' : 'text'}
+            value={record.data[column] || ''}
+            required={required}
+            autoComplete={column === mapping.name ? 'name' : column === mapping.phone ? 'tel' : 'off'}
+            onChange={event => setRecord(previous => ({ ...previous, data: { ...previous.data, [column]: event.target.value } }))}
+          /></Field>;
+        })}
+      </div>
+      <label className="toggle-row manual-status"><span><strong>Status: {record.active ? 'Active' : 'Paused'}</strong><small>Active contacts can receive wishes</small></span><input type="checkbox" checked={record.active} onChange={event => setRecord(previous => ({ ...previous, active: event.target.checked }))} /></label>
+      {error && <p className="review-error" role="alert">{error}</p>}
+      <div className="modal-actions"><Button type="button" variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button><Button type="submit" icon={Plus} disabled={busy}>{busy ? 'Adding…' : 'Add record'}</Button></div>
+    </form>
+  </Modal>;
 }
 
 function ContactGreetingReview({ contact, initialChannel, settings, onClose, notify }) {
@@ -467,10 +526,10 @@ function ImportProgress({ job, uploadProgress, onCancel, canceling }) {
   </div>;
 }
 
-function Import({ onChoose, busy }) {
+function Import({ onChoose, onAdd, busy }) {
   return (
     <div className="page-stack">
-      <div className="section-top"><div><span className="eyebrow">SPREADSHEET TO WISHES</span><h2>Import your people</h2><p>Choose a CSV or Excel file. Your contacts will be saved automatically.</p></div></div>
+      <div className="section-top"><div><span className="eyebrow">SPREADSHEET TO WISHES</span><h2>Import your people</h2><p>Choose a CSV or Excel file. Your contacts will be saved automatically.</p></div><Button variant="soft" icon={Plus} disabled={busy} onClick={onAdd}>Add record</Button></div>
       <div className="panel import-upload-panel">
         <div className="panel-heading"><div><span className="eyebrow">YOUR CONTACT FILE</span><h3>Choose a file</h3></div><FileCsv size={25} className="accent-icon" /></div>
         <label className={`dropzone ${busy ? 'dropzone-busy' : ''}`}><input type="file" accept=".csv,.xlsx" disabled={busy} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; onChoose(file); }} /><span className="drop-icon"><UploadSimple size={30} weight="duotone" /></span><strong>{busy ? 'Finish the current upload or import first' : 'Click to browse your files'}</strong><span>CSV or Excel (.xlsx) · Up to 50 GiB · resumable upload</span></label>

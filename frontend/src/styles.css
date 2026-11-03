@@ -330,6 +330,8 @@ body { min-width: 0; }
 .row-action-sms:hover { color: #a94e20; background: #ffe3cf; }
 .row-action-voice { color: #ad6236; background: #fff4e9; }
 .row-action-voice:hover { color: #934a23; background: #ffe9d2; }
+.manual-contact-modal .form-grid { padding-right: 4px; }
+.manual-status { margin-top: 16px; }
 .greeting-review-modal { max-width: 620px; }
 .greeting-review-modal .review-selects { max-height: none; overflow: visible; }
 .review-facts { display: grid; gap: 9px; margin: 19px 0 14px; }
@@ -356,6 +358,8 @@ body { min-width: 0; }
 .time-dropdown-option[aria-selected="true"] { background: #f47737; color: #fff; font-weight: 700; }
 .schedule-time-controls > span { color: #8b7868; font-size: 16px; font-weight: 700; }
 @media (max-width: 560px) {
+  .manual-contact-modal .modal-actions { flex-wrap: wrap; }
+  .manual-contact-modal .modal-actions .button { flex: 1 1 130px; }
   .greeting-review-modal { padding: 18px; }
   .greeting-review-modal .review-selects { grid-template-columns: 1fr; }
   .greeting-review-modal .modal-actions { flex-wrap: wrap; }
