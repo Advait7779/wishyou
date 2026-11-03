@@ -78,8 +78,8 @@ export function Contacts({ tick }: { tick: number }) {
   const columns: string[] = result?.dataset?.columns || []; const widths = columns.map(column => /name|address|email/i.test(column) ? 132 : 112); const tableWidth = widths.reduce((a, b) => a + b, 0) + 272;
   const usableSearch = !search.trim() || search.trim().length >= 3;
   const rows = usableSearch ? result?.items || [] : [];
-  return <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
-    <Heading eyebrow="YOUR PEOPLE" title="Contact directory" sub={result ? `${result.total?.toLocaleString() || 0} contacts${result.dataset ? ` from ${result.dataset.name}` : ''}` : 'Loading your people…'} />
+  return <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingTop: 12, gap: 12 }} keyboardShouldPersistTaps="handled">
+    <Heading eyebrow="YOUR PEOPLE" title="Contact directory" compact />
     <Field label="Search contacts" value={search} onChangeText={value => { setSearch(value); setBusy(false); setCursor(null); setStack([]); }} placeholder="Search 3+ characters in any column…" />
     <View style={{ flexDirection: 'row', gap: 6, marginVertical: 4 }}><Button title="Add record" icon="plus" compact soft disabled={activeImport} onPress={() => setEdit({ adding: true, data: {}, active: true })} /><Button title={job?.status === 'uploading' ? 'Resume import' : 'Import more'} icon="upload" compact disabled={uploading || (activeImport && job?.status !== 'uploading')} onPress={() => setImportOpen(true)} /><Button title="Clear dataset" icon="trash-2" compact soft disabled={activeImport || !result?.dataset} onPress={() => setConfirmClear(true)} /></View>
     {!!error && <Notice text={error} error />}{!!message && <Pressable onPress={() => setMessage('')}><Notice text={message} /></Pressable>}

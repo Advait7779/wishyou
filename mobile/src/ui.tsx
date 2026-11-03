@@ -16,7 +16,7 @@ export function Button({ title, onPress, icon, soft, danger, disabled, busy, com
   </Pressable>;
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) { return <View style={{ gap: 8 }}><Text style={s.label}>{label}</Text><TextInput placeholderTextColor="#b6a698" {...props} style={[s.input, props.style]} /></View>; }
-export function Heading({ eyebrow, title, sub }: { eyebrow: string; title: string; sub?: string }) { return <View style={{ gap: 7, marginBottom: 6 }}><Text style={s.eyebrow}>{eyebrow}</Text><Text style={s.heading}>{title}</Text>{sub && <Text style={s.copy}>{sub}</Text>}</View>; }
+export function Heading({ eyebrow, title, sub, compact }: { eyebrow: string; title: string; sub?: string; compact?: boolean }) { return <View style={{ gap: compact ? 4 : 7, marginBottom: compact ? 0 : 6 }}><Text style={[s.eyebrow, compact && { fontSize: 9, letterSpacing: 1.3 }]}>{eyebrow}</Text><Text style={[s.heading, compact && { fontSize: 22, lineHeight: 27 }]}>{title}</Text>{sub && <Text style={[s.copy, compact && { fontSize: 11, lineHeight: 16 }]}>{sub}</Text>}</View>; }
 export function Card({ children }: PropsWithChildren) { return <View style={s.card}>{children}</View>; }
 export function Notice({ text, error }: { text: string; error?: boolean }) { return text ? <Text accessibilityLiveRegion="polite" style={[s.notice, error && { color: c.red, backgroundColor: '#fff0ee' }]}>{text}</Text> : null; }
 export function Fade({ children }: PropsWithChildren) {
