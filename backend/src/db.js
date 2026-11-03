@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { syncConfiguredAdmin } from './admin.js';
 import { setupDeliveryTotals } from './delivery-totals.js';
+import { setupMobileSessions } from './mobile-auth.js';
 
 export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
 export const q = (sql, params = []) => pool.query(sql, params);
@@ -116,6 +117,7 @@ export async function setupDatabase() {
   await q("CREATE INDEX IF NOT EXISTS deliveries_sent_phone_idx ON deliveries(phone) WHERE status='sent'");
   await q('CREATE UNIQUE INDEX IF NOT EXISTS campaigns_auto_day_idx ON campaigns(occasion,channel,schedule_date) WHERE auto_generated=true AND schedule_date IS NOT NULL');
   await transaction(setupDeliveryTotals);
+  await setupMobileSessions(q);
   await q("INSERT INTO provider_rate_slots(channel) VALUES('sms'),('voice') ON CONFLICT DO NOTHING");
   if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
     await syncConfiguredAdmin(q, process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD);

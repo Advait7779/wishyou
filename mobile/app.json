@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "WishYou",
+    "slug": "wishyou-mobile",
+    "scheme": "wishyou",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/wishyou-icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.wishyou.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#f17235",
+        "foregroundImage": "./assets/wishyou-icon.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-router",
+      ["expo-splash-screen", { "image": "./assets/wishyou-icon.png", "imageWidth": 100, "backgroundColor": "#fffaf5" }],
+      "expo-font",
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": false } }]
+    ]
+  }
+}

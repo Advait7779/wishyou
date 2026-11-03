@@ -14,6 +14,8 @@ import { importWorkerState, installUploadRoutes, recoverImports, stopImports, ve
 import { clientError, errorResponse } from './api-errors.js';
 import { createContactsCursor, readContactsCursor, validDatabaseId } from './pagination.js';
 import { manualContactRecord, manualContactSchema } from './manual-contacts.js';
+import { installMobileLogin, mobileRouteAllowed, validateMobileSession } from './mobile-auth.js';
+import { mergeMobileSchedule } from './mobile-schedule.js';
 
 if (!process.env.DATABASE_URL || !process.env.JWT_SECRET || !process.env.CONFIG_ENCRYPTION_KEY || !process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
   throw new Error('Set DATABASE_URL, JWT_SECRET, CONFIG_ENCRYPTION_KEY, ADMIN_EMAIL, and ADMIN_PASSWORD in backend/.env.');
@@ -23,6 +25,7 @@ if (process.env.JWT_SECRET.length < 32 || process.env.ADMIN_PASSWORD.length < 12
 }
 
 const app = express();
+const backgroundJobsEnabled = process.env.BACKGROUND_JOBS_ENABLED !== 'false';
 const configuredAdminEmail = process.env.ADMIN_EMAIL.trim().toLowerCase();
 let configuredAdminVersion = null;
 app.disable('x-powered-by');
@@ -39,9 +42,9 @@ app.get('/api/health', async (_req, res) => {
     const pending = job.rows[0];
     const age = pending ? Date.now() - new Date(pending.updated_at).getTime() : 0;
     const importReady = importer.ready && (!pending || (pending.status === 'queued' ? age < 2 * 60 * 1000 : importer.active || age < 5 * 60 * 1000));
-    const checks = { database: true, importer: importReady, ...queueWorkerHealth({ importActive: importer.active }) };
+    const checks = { database: true, importer: importReady, ...(backgroundJobsEnabled ? queueWorkerHealth({ importActive: importer.active }) : {}) };
     const ok = Object.values(checks).every(Boolean);
-    res.status(ok ? 200 : 503).json({ ok, checks });
+    res.status(ok ? 200 : 503).json({ ok, checks, backgroundJobsEnabled });
   }
   catch { res.status(503).json({ ok: false }); }
 });
@@ -72,12 +75,20 @@ function publicDeliveryResult(row) {
   };
 }
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   try {
+    if (req.get('authorization')?.startsWith('Bearer ')) {
+      req.admin = await validateMobileSession(q, req.get('authorization').slice(7), configuredAdminVersion);
+      if (req.admin.email !== configuredAdminEmail || !mobileRouteAllowed(req.method, req.originalUrl.split('?')[0])) {
+        return res.status(403).json({ error: 'This setting is available from the web panel only.' });
+      }
+      res.set('Cache-Control', 'no-store');
+      return next();
+    }
     const token = req.cookies.wishyou_session;
     if (!token) return res.status(401).json({ error: 'Please sign in.' });
     req.admin = jwt.verify(token, process.env.JWT_SECRET);
-    if (req.admin.email !== configuredAdminEmail || req.admin.passwordVersion !== configuredAdminVersion) {
+    if (req.admin.client || req.admin.email !== configuredAdminEmail || req.admin.passwordVersion !== configuredAdminVersion) {
       return res.status(401).json({ error: 'Your session has expired.' });
     }
     next();
@@ -95,7 +106,25 @@ app.post('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, sta
 }));
 app.post('/api/auth/logout', (_, res) => { res.clearCookie('wishyou_session'); res.json({ ok: true }); });
 app.get('/api/auth/me', auth, (req, res) => res.json({ email: req.admin.email }));
+installMobileLogin(app, asyncRoute, { query: q, transaction, email: configuredAdminEmail, version: () => configuredAdminVersion });
 app.use('/api', auth);
+app.post('/api/mobile/logout', asyncRoute(async (req, res) => {
+  if (req.admin.client === 'mobile') await q('UPDATE mobile_sessions SET revoked_at=now() WHERE id=$1', [req.admin.sessionId]);
+  res.json({ ok: true });
+}));
+app.get('/api/mobile/schedule', asyncRoute(async (_req, res) => {
+  const settings = (await q("SELECT value FROM app_settings WHERE key='schedule'")).rows[0]?.value || {};
+  res.json({ sendTime: settings.sendTime || '09:00', birthdayEnabled: Boolean(settings.birthdayEnabled),
+    anniversaryEnabled: Boolean(settings.anniversaryEnabled), timezone: settings.timezone || 'Asia/Kolkata', sendingEnabled: backgroundJobsEnabled });
+}));
+app.put('/api/mobile/schedule', asyncRoute(async (req, res) => {
+  await transaction(async client => {
+    const current = (await client.query("SELECT value FROM app_settings WHERE key='schedule' FOR UPDATE")).rows[0]?.value || {};
+    await client.query("UPDATE app_settings SET value=$1 WHERE key='schedule'", [mergeMobileSchedule(current, req.body)]);
+  });
+  await audit('mobile.schedule_updated');
+  res.json({ ok: true });
+}));
 installUploadRoutes(app, asyncRoute, audit);
 
 app.get('/api/dashboard', asyncRoute(async (_, res) => {
@@ -240,17 +269,32 @@ app.get('/api/contacts/:id/greeting-review', asyncRoute(async (req, res) => {
   const providerUrl = greeting?.ready_url_encrypted ? buildReadyUrl(decryptSecret(greeting.ready_url_encrypted), contact) : null;
   const providerHost = providerUrl?.host || null;
   const urlMessage = channel === 'sms' && providerUrl ? smsMessageFromUrl(providerUrl) : '';
-  res.json({ contact, configured: Boolean(providerHost), previewText: urlMessage || greeting?.content || '', providerHost,
-    providerTemplateId: providerUrl?.searchParams.get('templateid') || null,
+  const schedule = (await q("SELECT value FROM app_settings WHERE key='schedule'")).rows[0]?.value || {};
+  const localParts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: schedule.timezone || 'Asia/Kolkata', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).map(part => [part.type, part.value]));
+  const occasionDate = occasion === 'birthday' ? contact.birth_date : contact.anniversary_date;
+    res.json({ contact, configured: Boolean(providerHost), previewText: urlMessage || greeting?.content || '',
+    sendingEnabled: backgroundJobsEnabled,
+    occasionToday: Boolean(occasionDate && occasionDate.slice(5) === `${localParts.month}-${localParts.day}`),
+    ...(req.admin.client === 'mobile' ? {} : { providerHost, providerTemplateId: providerUrl?.searchParams.get('templateid') || null }),
     mismatchedName: urlMessage ? mismatchedSmsName(urlMessage, contact) : '',
     lastAttempt: publicDeliveryResult(attempts.rows[0]), pending: Boolean(pending.rowCount), manualLimit });
 }));
 
 app.post('/api/contacts/:id/send-greeting', asyncRoute(async (req, res) => {
+  if (!backgroundJobsEnabled) throw clientError('Sending is paused on this local test server. Start the normal backend to send real greetings.', 409);
   const { id } = req.params;
   const { occasion, channel } = req.body;
   if (!/^[1-9]\d*$/.test(id) || !['birthday', 'anniversary'].includes(occasion) || !['sms', 'voice'].includes(channel)) {
     return res.status(400).json({ error: 'Choose a valid contact, occasion, and channel.' });
+  }
+  const requestKey = req.get('idempotency-key') || null;
+  if ((requestKey && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestKey)) || (req.admin.client === 'mobile' && !requestKey)) throw clientError('A valid send request key is required.');
+  if (requestKey) {
+    const old = (await q('SELECT * FROM manual_send_requests WHERE request_key=$1', [requestKey])).rows[0];
+    if (old) {
+      if (String(old.contact_id) !== id || old.occasion !== occasion || old.channel !== channel) throw clientError('This send request key was already used.', 409);
+      return res.json({ campaignId: old.campaign_id, recipientCount: 1 });
+    }
   }
   const contact = (await q('SELECT id,display_name,phone,birth_date,anniversary_date,active FROM contacts WHERE id=$1', [id])).rows[0];
   if (!contact) return res.status(404).json({ error: 'Contact not found.' });
@@ -265,12 +309,9 @@ app.post('/api/contacts/:id/send-greeting', asyncRoute(async (req, res) => {
     const wrongName = mismatchedSmsName(message, contact);
     if (wrongName) return res.status(400).json({ error: `The saved SMS says “Dear ${wrongName}” for ${contact.display_name}. Use {name} in the SMS URL in Settings.` });
   }
-  const pending = await q(`SELECT 1 FROM deliveries d JOIN campaigns c ON c.id=d.campaign_id
-    WHERE d.contact_id=$1 AND c.occasion=$2 AND c.channel=$3 AND d.status IN ('queued','sending') LIMIT 1`, [id, occasion, channel]);
-  if (pending.rowCount) return res.status(409).json({ error: 'A greeting for this contact is already queued or sending.' });
   const campaign = await createCampaign({
     occasion, channel, templateId: slot.id, contactIds: [id], sendAt: new Date().toISOString(),
-    name: `${occasion} ${channel} for ${contact.display_name || contact.phone}`, forceResend: true, manualContactSend: true,
+    name: `${occasion} ${channel} for ${contact.display_name || contact.phone}`, forceResend: true, manualContactSend: true, requestKey,
   });
   await audit('contact.greeting_requested', { contactId: id, campaignId: campaign.id, occasion, channel });
   processDueDeliveries().catch(error => console.error('Delivery worker:', error.message));
@@ -418,15 +459,17 @@ async function markStaleDeliveries() {
     error='Worker stopped during provider request; delivery result is unknown. Review before retrying.'
     WHERE status='sending' AND sending_started_at < now() - interval '5 minutes'`);
 }
-await markStaleDeliveries();
+if (backgroundJobsEnabled) await markStaleDeliveries();
 const server = app.listen(Number(process.env.PORT || 4000), () => console.log(`WishYou API listening on port ${process.env.PORT || 4000}`));
-const timers = [
+const timers = backgroundJobsEnabled ? [
   setInterval(() => processDueDeliveries().catch(error => console.error('Delivery worker:', error.message)), 1000),
   setInterval(() => scheduleTodaysWishes().catch(error => console.error('Scheduler:', error.message)), 5000),
   setInterval(() => markStaleDeliveries().catch(error => console.error('Stale delivery recovery:', error.message)), 60000),
-];
-scheduleTodaysWishes().catch(error => console.error('Scheduler:', error.message));
-processDueDeliveries().catch(error => console.error('Delivery worker:', error.message));
+] : [];
+if (backgroundJobsEnabled) {
+  scheduleTodaysWishes().catch(error => console.error('Scheduler:', error.message));
+  processDueDeliveries().catch(error => console.error('Delivery worker:', error.message));
+}
 
 async function shutdown() {
   if (shuttingDown) return;

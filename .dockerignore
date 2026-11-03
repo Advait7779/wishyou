@@ -11,3 +11,5 @@ backend/.tmp
 *.csv
 *.xlsx
 .git
+mobile
+MOBILE_APP_PLAN.md

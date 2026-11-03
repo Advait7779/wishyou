@@ -8,6 +8,10 @@ An admin panel for importing dynamic contact spreadsheets and sending birthday o
 - `backend/`: Node.js, Express.js
 - PostgreSQL
 
+## Android / Expo Go
+
+The `mobile/` React Native application uses the same backend with restricted mobile sessions. See [mobile/README.md](mobile/README.md) for Expo Go startup, LAN/API configuration, test-server sending behavior, and release limitations. Run `npm run dev:mobile:api` for the API on port 4001 and `npm run dev:mobile` for Expo; the test API pauses provider sends for its own process but shares the configured database.
+
 ## Run locally
 
 1. Create a PostgreSQL database and set its connection string in `backend/.env`. Copy `backend/.env.example` first. For a local development database, run `docker compose -f compose.local.yaml up -d` if Docker is available.

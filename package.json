@@ -6,6 +6,8 @@
     "dev": "node scripts/dev.mjs",
     "dev:backend": "npm run dev -w backend",
     "dev:frontend": "npm run dev -w frontend",
+    "dev:mobile": "npm --prefix mobile start",
+    "dev:mobile:api": "node scripts/mobile-api.mjs",
     "build": "npm run build -w frontend",
     "test": "npm run test -w backend"
   }
