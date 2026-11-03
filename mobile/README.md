@@ -18,7 +18,7 @@ The installed Expo Go must support SDK 57. If Expo Go reports an SDK mismatch, u
 ## Included
 
 - Orange/cream login and dashboard, bottom navigation, reduced-motion-aware screen/dialog animations.
-- Native horizontal contact table with virtualized rows, dynamic imported columns, 25-row cursor pagination, search, Add/Edit/Delete, and Clear dataset.
+- Simple full-width horizontal contact table with natural page scrolling, dynamic imported columns, bounded 25-row cursor pagination, search, Add/Edit/Delete, and Clear dataset. The compact Add record, Import more, and Clear dataset controls share one row.
 - SMS/voice review with occasion/channel choice, date warning, preview, provider acceptance status, and shared two-per-number rolling 24-hour allowance.
 - Idempotency keys persist through uncertain network failures so retrying the same send does not enqueue it twice. Read requests can be retried; sends are never silently queued offline.
 - Schedule time selection and automatic birthday/anniversary switches; uses the existing server timezone and scheduler. Provider URLs are managed only through the web panel.

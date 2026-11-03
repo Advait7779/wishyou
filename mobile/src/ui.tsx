@@ -7,11 +7,12 @@ import Reanimated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
 export const c = { bg: '#fffaf5', orange: '#f17235', ink: '#2c241d', muted: '#928276', border: '#f0e4d9', soft: '#fff0e5', red: '#d94e43', green: '#099b83' };
 export type IconName = React.ComponentProps<typeof Feather>['name'];
 export function Icon({ name, color = c.orange, size = 19 }: { name: IconName; color?: ColorValue; size?: number }) { return <Feather name={name} color={color} size={size} />; }
-export function Button({ title, onPress, icon, soft, danger, disabled, busy }: { title: string; onPress: () => void; icon?: IconName; soft?: boolean; danger?: boolean; disabled?: boolean; busy?: boolean }) {
+export function Button({ title, onPress, icon, soft, danger, disabled, busy, compact }: { title: string; onPress: () => void; icon?: IconName; soft?: boolean; danger?: boolean; disabled?: boolean; busy?: boolean; compact?: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={title} disabled={disabled || busy} onPress={onPress}
-    style={({ pressed }) => [s.button, { backgroundColor: danger ? c.red : soft ? c.soft : c.orange }, (disabled || busy) && { opacity: .5 }, pressed && { opacity: .8, transform: [{ scale: .98 }] }]}>
-    {busy ? <ActivityIndicator size="small" color={soft ? c.orange : '#fff'} /> : icon && <Icon name={icon} color={soft ? c.orange : '#fff'} size={17} />}
-    <Text style={[s.buttonText, soft && { color: c.orange }]}>{title}</Text>
+    hitSlop={compact ? { top: 4, bottom: 4 } : undefined}
+    style={({ pressed }) => [s.button, compact && { flex: 1, minWidth: 0, minHeight: 36, paddingHorizontal: 6, paddingVertical: 9, gap: 4, borderRadius: 8 }, { backgroundColor: danger ? c.red : soft ? c.soft : c.orange }, (disabled || busy) && { opacity: .5 }, pressed && { opacity: .8, transform: [{ scale: .98 }] }]}>
+    {busy ? <ActivityIndicator size="small" color={soft ? c.orange : '#fff'} /> : icon && <Icon name={icon} color={soft ? c.orange : '#fff'} size={compact ? 14 : 17} />}
+    <Text numberOfLines={compact ? 1 : undefined} adjustsFontSizeToFit={compact} minimumFontScale={0.85} style={[s.buttonText, compact && { fontSize: 10, flexShrink: 1 }, soft && { color: c.orange }]}>{title}</Text>
   </Pressable>;
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) { return <View style={{ gap: 8 }}><Text style={s.label}>{label}</Text><TextInput placeholderTextColor="#b6a698" {...props} style={[s.input, props.style]} /></View>; }
