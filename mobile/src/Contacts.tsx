@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { fetch as expoFetch } from 'expo/fetch';
@@ -14,6 +14,7 @@ export function Contacts({ tick }: { tick: number }) {
   const [reload, setReload] = useState(0); const [busy, setBusy] = useState(false); const [edit, setEdit] = useState<any>(null); const [review, setReview] = useState<any>(null);
   const [importOpen, setImportOpen] = useState(false); const [job, setJob] = useState<any>(null); const [uploading, setUploading] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [deleting, setDeleting] = useState<any>(null);
   const uploadRef = useRef<AbortController | null>(null); const datasetRef = useRef<string | null>(null); const mounted = useRef(true);
   const totalRef = useRef<{ search: string; dataset: string | null; total: number } | null>(null);
   const generationRef = useRef({ tick, reload });
@@ -42,7 +43,7 @@ export function Contacts({ tick }: { tick: number }) {
   const activeImport = ['uploading', 'queued', 'processing', 'waiting_for_sends'].includes(job?.status);
   async function removeUpload() { if (!job) return; uploadRef.current?.abort(); try { await api(`/imports/uploads/${job.id}`, { method: 'DELETE' }); setJob(null); setMessage('Upload removed.'); } catch (e: any) { setError(e.message); } }
   async function clear() { await api('/contacts/clear', json('POST', { confirm: 'CLEAR' })); invalidate(); setConfirmClear(false); setMessage('Contacts cleared.'); }
-  async function remove(contact: any) { try { await api(`/contacts/${contact.id}`, { method: 'DELETE' }); invalidate(); setMessage('Contact deleted.'); } catch (e: any) { setError(e.message); } }
+  async function remove(contact: any) { await api(`/contacts/${contact.id}`, { method: 'DELETE' }); setDeleting(null); invalidate(); setMessage('Contact deleted.'); }
   async function importFile(dateFormat: string) {
     if (uploadRef.current) return;
     let handle: ReturnType<File['open']> | undefined;
@@ -87,29 +88,30 @@ export function Contacts({ tick }: { tick: number }) {
       <View style={{ width: tableWidth }}>
         <View style={{ flexDirection: 'row', backgroundColor: '#fff8f2', borderBottomWidth: 1, borderTopWidth: 1, borderColor: c.border }}>{[...columns, 'Status', 'Action'].map((column, i) => <Text key={`${column}-${i}`} style={{ width: i < columns.length ? widths[i] : i === columns.length ? 76 : 196, paddingHorizontal: 10, paddingVertical: 12, color: c.ink, fontWeight: '700', fontSize: 11 }}>{column}</Text>)}</View>
         {!rows.length && <View style={{ padding: 25 }}><Text style={s.copy}>{busy ? 'Loading…' : !usableSearch ? 'Enter at least 3 characters to search.' : 'No contacts found. Add a record or import a file.'}</Text></View>}
-        {rows.map((item: any) => <ContactTableRow key={String(item.id)} item={item} columns={columns} widths={widths} onEdit={setEdit} onReview={setReview} onDelete={remove} />)}
+        {rows.map((item: any) => <ContactTableRow key={String(item.id)} item={item} columns={columns} widths={widths} onEdit={setEdit} onReview={setReview} onDelete={setDeleting} />)}
       </View>
     </ScrollView>
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}><Button title="Previous" soft disabled={!stack.length || busy} onPress={() => { setCursor(stack.at(-1) || null); setStack(stack.slice(0, -1)); }} /><Text style={s.copy}>{busy ? 'Loading…' : `Page ${stack.length + 1}`}</Text><Button title="Next" soft disabled={!result?.nextCursor || busy || !usableSearch} onPress={() => { setStack([...stack, cursor]); setCursor(result.nextCursor); }} /></View>
     {edit && <ContactForm record={edit} schema={edit.adding ? result?.manualSchema : { columns, mapping: result?.dataset?.mapping || {} }} datasetId={result?.dataset?.id || null} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); setSearch(''); invalidate(); setMessage(edit.adding ? 'Contact added.' : 'Contact updated.'); }} />}
     {review && <GreetingReview contact={review.contact} initialChannel={review.channel} tick={tick} onClose={() => setReview(null)} onSent={() => { setReview(null); setMessage('Greeting queued. Reopen the review to check the provider response.'); }} />}
     {importOpen && <ImportDialog replacing={Boolean(result?.dataset)} onClose={() => setImportOpen(false)} onImport={importFile} />}
-    {confirmClear && <ClearDatasetConfirmation onClose={() => setConfirmClear(false)} onConfirm={clear} />}
+    {confirmClear && <DestructiveConfirmation title="Clear this dataset?" body="This permanently removes all contacts, imported columns, and past send records." actionLabel="Clear dataset" busyLabel="Clearing…" onClose={() => setConfirmClear(false)} onConfirm={clear} />}
+    {deleting && <DestructiveConfirmation title="Delete contact?" body={`This permanently removes ${deleting.display_name || 'this contact'} and their send records. Any unsent wishes will be canceled.`} actionLabel="Delete contact" busyLabel="Deleting…" onClose={() => setDeleting(null)} onConfirm={() => remove(deleting)} />}
   </ScrollView>;
 }
 
-function ClearDatasetConfirmation({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => Promise<void> }) {
+function DestructiveConfirmation({ title, body, actionLabel, busyLabel, onClose, onConfirm }: { title: string; body: string; actionLabel: string; busyLabel: string; onClose: () => void; onConfirm: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   async function confirm() {
     if (busy) return;
     setBusy(true); setError('');
     try { await onConfirm(); } catch (cause: any) { setError(cause.message); } finally { setBusy(false); }
   }
-  return <Dialog title="Clear this dataset?" onClose={onClose} busy={busy}>
+  return <Dialog title={title} onClose={onClose} busy={busy}>
     <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center' }}><Icon name="trash-2" size={25} /></View>
-    <Text style={s.copy}>This permanently removes all contacts, imported columns, and past send records.</Text>
+    <Text style={s.copy}>{body}</Text>
     <Notice text={error} error />
-    <View style={[s.actions, { marginTop: 6 }]}><Button title="Cancel" soft disabled={busy} onPress={onClose} /><Button title={busy ? 'Clearing…' : 'Clear dataset'} icon="trash-2" danger busy={busy} onPress={confirm} /></View>
+    <View style={[s.actions, { marginTop: 6 }]}><Button title="Cancel" soft disabled={busy} onPress={onClose} /><Button title={busy ? busyLabel : actionLabel} icon="trash-2" danger busy={busy} onPress={confirm} /></View>
   </Dialog>;
 }
 
@@ -122,7 +124,7 @@ function ContactTableRow({ item, columns, widths, onEdit, onReview, onDelete }: 
       {action('edit-2', 'Edit', () => onEdit({ ...item, data: { ...item.data } }))}
       {action('message-square', 'Send SMS to', () => onReview({ contact: item, channel: 'sms' }))}
       {action('phone-call', 'Call', () => onReview({ contact: item, channel: 'voice' }))}
-      {action('trash-2', 'Delete', () => Alert.alert('Delete contact?', `This permanently removes ${item.display_name || 'this contact'} and their send records.`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => onDelete(item) }]))}
+      {action('trash-2', 'Delete', () => onDelete(item))}
     </View>
   </View>;
 }
