@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, 
 import { LinearGradient } from 'expo-linear-gradient';
 import { api, API_URL, json, login } from './api';
 import { Button, Card, c, Dialog, Field, Heading, Icon, IconName, Notice, s } from './ui';
+import { WelcomeBanner } from './WelcomeBanner';
 
 export function SignIn({ onLogin }: { onLogin: (email: string) => void }) {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
@@ -28,7 +29,7 @@ export function Overview({ tick, onContacts }: { tick: number; onContacts: () =>
   useEffect(() => { const controller = new AbortController(); api('/dashboard', { signal: controller.signal }).then(value => { setData(value); setError(''); }).catch(e => { if (!controller.signal.aborted) setError(e.message); }).finally(() => { if (!controller.signal.aborted) setBusy(false); }); return () => controller.abort(); }, [tick, reload]);
   const stats: [IconName, string, number][] = [['users', 'Total contacts', data?.contacts || 0], ['calendar', 'Celebrating today', data?.todayCount || 0], ['send', 'Wishes accepted', data?.deliveries?.sent || 0], ['check-circle', 'Greeting URLs', data?.greetingCount || 0]];
   return <ScrollView contentContainerStyle={[s.page, { padding: 16, paddingTop: 12, gap: 14 }]} refreshControl={<RefreshControl refreshing={busy} onRefresh={() => { setBusy(true); setReload(v => v + 1); }} tintColor={c.orange} />}>
-    <LinearGradient colors={['#f17739', '#fbb77b']} style={{ borderRadius: 17, paddingHorizontal: 18, paddingVertical: 26, gap: 8 }}><Text style={[s.eyebrow, { color: '#ffe3ce', fontSize: 9, letterSpacing: 1.3 }]}>YOUR WISHING SPACE</Text><Text style={{ color: '#fff', fontSize: 23, lineHeight: 29, fontFamily: 'serif', fontStyle: 'italic' }}>Celebrate the little things.</Text><Text style={{ color: '#fff3ea', fontSize: 11, lineHeight: 17 }}>Keep every birthday and anniversary close, and every message heartfelt.</Text></LinearGradient>
+    <WelcomeBanner />
     <Notice text={error} error />
     <View style={{ gap: 10 }}>{[stats.slice(0, 2), stats.slice(2, 4)].map((row, index) => <View key={index} style={{ flexDirection: 'row', gap: 10 }}>{row.map(([icon, label, value]) => <View key={label} style={{ flex: 1, minWidth: 0, backgroundColor: '#fff', borderColor: c.border, borderWidth: 1, borderRadius: 14, padding: 12, gap: 7 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}><View style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={16} /></View><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ flex: 1, color: c.ink, fontSize: 21, fontWeight: '800' }}>{value.toLocaleString()}</Text></View>
