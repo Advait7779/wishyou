@@ -107,11 +107,10 @@ function DestructiveConfirmation({ title, body, actionLabel, busyLabel, onClose,
     setBusy(true); setError('');
     try { await onConfirm(); } catch (cause: any) { setError(cause.message); } finally { setBusy(false); }
   }
-  return <Dialog title={title} onClose={onClose} busy={busy}>
-    <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center' }}><Icon name="trash-2" size={25} /></View>
-    <Text style={s.copy}>{body}</Text>
+  return <Dialog title={title} onClose={onClose} busy={busy} compact icon="trash-2">
+    <Text style={[s.copy, { fontSize: 12, lineHeight: 19 }]}>{body}</Text>
     <Notice text={error} error />
-    <View style={[s.actions, { marginTop: 6 }]}><Button title="Cancel" soft disabled={busy} onPress={onClose} /><Button title={busy ? busyLabel : actionLabel} icon="trash-2" danger busy={busy} onPress={confirm} /></View>
+    <View style={[s.actions, { flexWrap: 'nowrap', gap: 8, marginTop: 2 }]}><Button title="Cancel" compact soft disabled={busy} onPress={onClose} /><Button title={busy ? busyLabel : actionLabel} compact icon="trash-2" danger busy={busy} onPress={confirm} /></View>
   </Dialog>;
 }
 

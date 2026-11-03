@@ -24,10 +24,17 @@ export function Fade({ children }: PropsWithChildren) {
   useEffect(() => { let mounted = true; AccessibilityInfo.isReduceMotionEnabled().then(reduced => { if (!mounted || reduced) return; opacity.setValue(0); Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start(); }); return () => { mounted = false; }; }, [opacity]);
   return <Animated.View style={{ flex: 1, opacity }}>{children}</Animated.View>;
 }
-export function Dialog({ title, children, onClose, busy }: PropsWithChildren<{ title: string; onClose: () => void; busy?: boolean }>) {
+export function Dialog({ title, children, onClose, busy, compact, icon }: PropsWithChildren<{ title: string; onClose: () => void; busy?: boolean; compact?: boolean; icon?: IconName }>) {
   const insets = useSafeAreaInsets();
   return <Modal visible transparent animationType="none" onRequestClose={() => !busy && onClose()}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[s.backdrop, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
-    <Reanimated.View entering={FadeInDown.duration(200).reduceMotion(ReduceMotion.System)} accessibilityViewIsModal style={s.dialog}><View style={s.dialogHeader}><Text style={s.dialogTitle}>{title}</Text><Pressable onPress={onClose} disabled={busy} accessibilityLabel="Close dialog" style={s.iconButton}><Icon name="x" /></Pressable></View><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 16, paddingBottom: 6 }}>{children}</ScrollView></Reanimated.View>
+    <Reanimated.View entering={FadeInDown.duration(200).reduceMotion(ReduceMotion.System)} accessibilityViewIsModal style={[s.dialog, compact && { width: '100%', maxWidth: 320, alignSelf: 'center', borderRadius: 16, padding: 16, gap: 10 }]}>
+      <View style={[s.dialogHeader, compact && { gap: 9 }]}>
+        {icon && <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={15} /></View>}
+        <Text style={[s.dialogTitle, compact && { fontSize: 17, fontWeight: '600' }]}>{title}</Text>
+        <Pressable onPress={onClose} disabled={busy} accessibilityLabel="Close dialog" hitSlop={compact ? 6 : undefined} style={[s.iconButton, compact && { minWidth: 32, minHeight: 32, borderRadius: 8 }]}><Icon name="x" size={compact ? 16 : 19} /></Pressable>
+      </View>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: compact ? 12 : 16, paddingBottom: compact ? 0 : 6 }}>{children}</ScrollView>
+    </Reanimated.View>
   </KeyboardAvoidingView></Modal>;
 }
 export function Choice({ value, options, onChange }: { value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
