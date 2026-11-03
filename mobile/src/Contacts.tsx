@@ -73,7 +73,7 @@ export function Contacts({ tick }: { tick: number }) {
     } catch (e: any) { if (mounted.current) { if (controller.signal.aborted) setMessage('Upload paused. Select the same file to resume.'); else setError(e.message); } }
     finally { handle?.close(); sub?.remove(); uploadRef.current = null; if (mounted.current) setUploading(false); }
   }
-  const columns: string[] = result?.dataset?.columns || []; const widths = columns.map(column => /name|address|email/i.test(column) ? 165 : 140); const tableWidth = widths.reduce((a, b) => a + b, 0) + 310;
+  const columns: string[] = result?.dataset?.columns || []; const widths = columns.map(column => /name|address|email/i.test(column) ? 132 : 112); const tableWidth = widths.reduce((a, b) => a + b, 0) + 272;
   const usableSearch = !search.trim() || search.trim().length >= 3;
   const rows = usableSearch ? result?.items || [] : [];
   return <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
@@ -82,9 +82,9 @@ export function Contacts({ tick }: { tick: number }) {
     <View style={{ flexDirection: 'row', gap: 6, marginVertical: 4 }}><Button title="Add record" icon="plus" compact soft disabled={activeImport} onPress={() => setEdit({ adding: true, data: {}, active: true })} /><Button title={job?.status === 'uploading' ? 'Resume import' : 'Import more'} icon="upload" compact disabled={uploading || (activeImport && job?.status !== 'uploading')} onPress={() => setImportOpen(true)} /><Button title="Clear dataset" icon="trash-2" compact soft disabled={activeImport || !result?.dataset} onPress={() => Alert.alert('Clear dataset?', 'This removes all contacts and past send records.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])} /></View>
     {!!error && <Notice text={error} error />}{!!message && <Pressable onPress={() => setMessage('')}><Notice text={message} /></Pressable>}
     {job && job.status !== 'completed' && <View style={{ padding: 10, backgroundColor: c.soft, borderRadius: 10, gap: 6 }}><Text style={s.label}>{job.status === 'uploading' ? `Uploading ${Math.round(job.offset / job.size * 100)}%` : job.status === 'processing' ? `Importing · ${job.processedRows.toLocaleString()} rows checked` : job.status === 'waiting_for_sends' ? 'Waiting for active sends to finish' : job.status === 'failed' ? 'Import failed' : 'Queued for import'}</Text>{!!job.error && <Text style={s.copy}>{job.error}</Text>}{['uploading', 'failed'].includes(job.status) && <Button title={job.status === 'failed' ? 'Dismiss failed import' : uploading ? 'Pause upload' : 'Cancel upload'} soft onPress={uploading ? () => uploadRef.current?.abort() : removeUpload} />}</View>}
-    <ScrollView horizontal style={{ marginHorizontal: -16, backgroundColor: '#fff' }} keyboardShouldPersistTaps="handled">
+    <ScrollView horizontal style={{ backgroundColor: '#fff' }} keyboardShouldPersistTaps="handled">
       <View style={{ width: tableWidth }}>
-        <View style={{ flexDirection: 'row', backgroundColor: '#fff8f2', borderBottomWidth: 1, borderTopWidth: 1, borderColor: c.border }}>{[...columns, 'Status', 'Action'].map((column, i) => <Text key={`${column}-${i}`} style={{ width: i < columns.length ? widths[i] : i === columns.length ? 95 : 215, padding: 16, color: c.ink, fontWeight: '700', fontSize: 12 }}>{column}</Text>)}</View>
+        <View style={{ flexDirection: 'row', backgroundColor: '#fff8f2', borderBottomWidth: 1, borderTopWidth: 1, borderColor: c.border }}>{[...columns, 'Status', 'Action'].map((column, i) => <Text key={`${column}-${i}`} style={{ width: i < columns.length ? widths[i] : i === columns.length ? 76 : 196, paddingHorizontal: 10, paddingVertical: 12, color: c.ink, fontWeight: '700', fontSize: 11 }}>{column}</Text>)}</View>
         {!rows.length && <View style={{ padding: 25 }}><Text style={s.copy}>{busy ? 'Loading…' : !usableSearch ? 'Enter at least 3 characters to search.' : 'No contacts found. Add a record or import a file.'}</Text></View>}
         {rows.map((item: any) => <ContactTableRow key={String(item.id)} item={item} columns={columns} widths={widths} onEdit={setEdit} onReview={setReview} onDelete={remove} />)}
       </View>
@@ -97,11 +97,11 @@ export function Contacts({ tick }: { tick: number }) {
 }
 
 function ContactTableRow({ item, columns, widths, onEdit, onReview, onDelete }: { item: any; columns: string[]; widths: number[]; onEdit: (value: any) => void; onReview: (value: any) => void; onDelete: (value: any) => void }) {
-  const action = (icon: IconName, label: string, onPress: () => void) => <Pressable key={label} accessibilityLabel={`${label} ${item.display_name || 'contact'}`} onPress={onPress} style={[s.iconButton, { backgroundColor: icon === 'trash-2' ? '#fff0ee' : c.soft }]}><Icon name={icon} color={icon === 'trash-2' ? c.red : c.orange} size={17} /></Pressable>;
-  return <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f6ede6', alignItems: 'center', minHeight: 72 }}>
-    {columns.map((column, i) => <Text key={column} numberOfLines={2} style={{ width: widths[i], padding: 16, color: '#66574b', fontSize: 12 }}>{String(item.data[column] ?? '') || '—'}</Text>)}
-    <View style={{ width: 95, padding: 10 }}><Text style={{ color: item.active ? c.green : c.muted, backgroundColor: item.active ? '#e8f7ef' : '#f3f0ed', fontSize: 10, borderRadius: 15, padding: 8, alignSelf: 'flex-start' }}>{item.active ? 'Active' : 'Paused'}</Text></View>
-    <View style={{ width: 215, flexDirection: 'row', gap: 4, paddingHorizontal: 6 }}>
+  const action = (icon: IconName, label: string, onPress: () => void) => <Pressable key={label} accessibilityLabel={`${label} ${item.display_name || 'contact'}`} onPress={onPress} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}><View style={{ width: 30, height: 30, borderRadius: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: icon === 'trash-2' ? '#fff0ee' : c.soft }}><Icon name={icon} color={icon === 'trash-2' ? c.red : c.orange} size={14} /></View></Pressable>;
+  return <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f6ede6', alignItems: 'center', minHeight: 56 }}>
+    {columns.map((column, i) => <Text key={column} numberOfLines={2} style={{ width: widths[i], paddingHorizontal: 10, paddingVertical: 10, color: '#66574b', fontSize: 11 }}>{String(item.data[column] ?? '') || '—'}</Text>)}
+    <View style={{ width: 76, paddingHorizontal: 10 }}><Text style={{ color: item.active ? c.green : c.muted, backgroundColor: item.active ? '#e8f7ef' : '#f3f0ed', fontSize: 9, borderRadius: 12, paddingHorizontal: 6, paddingVertical: 4, alignSelf: 'flex-start' }}>{item.active ? 'Active' : 'Paused'}</Text></View>
+    <View style={{ width: 196, flexDirection: 'row', gap: 2, paddingHorizontal: 6 }}>
       {action('edit-2', 'Edit', () => onEdit({ ...item, data: { ...item.data } }))}
       {action('message-square', 'Send SMS to', () => onReview({ contact: item, channel: 'sms' }))}
       {action('phone-call', 'Call', () => onReview({ contact: item, channel: 'voice' }))}
