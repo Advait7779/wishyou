@@ -13,6 +13,7 @@ export function Contacts({ tick }: { tick: number }) {
   const [search, setSearch] = useState(''); const [cursor, setCursor] = useState<string | null>(null); const [stack, setStack] = useState<(string | null)[]>([]);
   const [reload, setReload] = useState(0); const [busy, setBusy] = useState(false); const [edit, setEdit] = useState<any>(null); const [review, setReview] = useState<any>(null);
   const [importOpen, setImportOpen] = useState(false); const [job, setJob] = useState<any>(null); const [uploading, setUploading] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const uploadRef = useRef<AbortController | null>(null); const datasetRef = useRef<string | null>(null); const mounted = useRef(true);
   const totalRef = useRef<{ search: string; dataset: string | null; total: number } | null>(null);
   const generationRef = useRef({ tick, reload });
@@ -40,7 +41,7 @@ export function Contacts({ tick }: { tick: number }) {
   }, [jobId, jobStatus, acceptJob]);
   const activeImport = ['uploading', 'queued', 'processing', 'waiting_for_sends'].includes(job?.status);
   async function removeUpload() { if (!job) return; uploadRef.current?.abort(); try { await api(`/imports/uploads/${job.id}`, { method: 'DELETE' }); setJob(null); setMessage('Upload removed.'); } catch (e: any) { setError(e.message); } }
-  async function clear() { try { await api('/contacts/clear', json('POST', { confirm: 'CLEAR' })); invalidate(); setMessage('Contacts cleared.'); } catch (e: any) { setError(e.message); } }
+  async function clear() { await api('/contacts/clear', json('POST', { confirm: 'CLEAR' })); invalidate(); setConfirmClear(false); setMessage('Contacts cleared.'); }
   async function remove(contact: any) { try { await api(`/contacts/${contact.id}`, { method: 'DELETE' }); invalidate(); setMessage('Contact deleted.'); } catch (e: any) { setError(e.message); } }
   async function importFile(dateFormat: string) {
     if (uploadRef.current) return;
@@ -79,7 +80,7 @@ export function Contacts({ tick }: { tick: number }) {
   return <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
     <Heading eyebrow="YOUR PEOPLE" title="Contact directory" sub={result ? `${result.total?.toLocaleString() || 0} contacts${result.dataset ? ` from ${result.dataset.name}` : ''}` : 'Loading your people…'} />
     <Field label="Search contacts" value={search} onChangeText={value => { setSearch(value); setBusy(false); setCursor(null); setStack([]); }} placeholder="Search 3+ characters in any column…" />
-    <View style={{ flexDirection: 'row', gap: 6, marginVertical: 4 }}><Button title="Add record" icon="plus" compact soft disabled={activeImport} onPress={() => setEdit({ adding: true, data: {}, active: true })} /><Button title={job?.status === 'uploading' ? 'Resume import' : 'Import more'} icon="upload" compact disabled={uploading || (activeImport && job?.status !== 'uploading')} onPress={() => setImportOpen(true)} /><Button title="Clear dataset" icon="trash-2" compact soft disabled={activeImport || !result?.dataset} onPress={() => Alert.alert('Clear dataset?', 'This removes all contacts and past send records.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])} /></View>
+    <View style={{ flexDirection: 'row', gap: 6, marginVertical: 4 }}><Button title="Add record" icon="plus" compact soft disabled={activeImport} onPress={() => setEdit({ adding: true, data: {}, active: true })} /><Button title={job?.status === 'uploading' ? 'Resume import' : 'Import more'} icon="upload" compact disabled={uploading || (activeImport && job?.status !== 'uploading')} onPress={() => setImportOpen(true)} /><Button title="Clear dataset" icon="trash-2" compact soft disabled={activeImport || !result?.dataset} onPress={() => setConfirmClear(true)} /></View>
     {!!error && <Notice text={error} error />}{!!message && <Pressable onPress={() => setMessage('')}><Notice text={message} /></Pressable>}
     {job && job.status !== 'completed' && <View style={{ padding: 10, backgroundColor: c.soft, borderRadius: 10, gap: 6 }}><Text style={s.label}>{job.status === 'uploading' ? `Uploading ${Math.round(job.offset / job.size * 100)}%` : job.status === 'processing' ? `Importing · ${job.processedRows.toLocaleString()} rows checked` : job.status === 'waiting_for_sends' ? 'Waiting for active sends to finish' : job.status === 'failed' ? 'Import failed' : 'Queued for import'}</Text>{!!job.error && <Text style={s.copy}>{job.error}</Text>}{['uploading', 'failed'].includes(job.status) && <Button title={job.status === 'failed' ? 'Dismiss failed import' : uploading ? 'Pause upload' : 'Cancel upload'} soft onPress={uploading ? () => uploadRef.current?.abort() : removeUpload} />}</View>}
     <ScrollView horizontal style={{ backgroundColor: '#fff' }} keyboardShouldPersistTaps="handled">
@@ -93,7 +94,23 @@ export function Contacts({ tick }: { tick: number }) {
     {edit && <ContactForm record={edit} schema={edit.adding ? result?.manualSchema : { columns, mapping: result?.dataset?.mapping || {} }} datasetId={result?.dataset?.id || null} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); setSearch(''); invalidate(); setMessage(edit.adding ? 'Contact added.' : 'Contact updated.'); }} />}
     {review && <GreetingReview contact={review.contact} initialChannel={review.channel} tick={tick} onClose={() => setReview(null)} onSent={() => { setReview(null); setMessage('Greeting queued. Reopen the review to check the provider response.'); }} />}
     {importOpen && <ImportDialog replacing={Boolean(result?.dataset)} onClose={() => setImportOpen(false)} onImport={importFile} />}
+    {confirmClear && <ClearDatasetConfirmation onClose={() => setConfirmClear(false)} onConfirm={clear} />}
   </ScrollView>;
+}
+
+function ClearDatasetConfirmation({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  async function confirm() {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await onConfirm(); } catch (cause: any) { setError(cause.message); } finally { setBusy(false); }
+  }
+  return <Dialog title="Clear this dataset?" onClose={onClose} busy={busy}>
+    <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center' }}><Icon name="trash-2" size={25} /></View>
+    <Text style={s.copy}>This permanently removes all contacts, imported columns, and past send records.</Text>
+    <Notice text={error} error />
+    <View style={[s.actions, { marginTop: 6 }]}><Button title="Cancel" soft disabled={busy} onPress={onClose} /><Button title={busy ? 'Clearing…' : 'Clear dataset'} icon="trash-2" danger busy={busy} onPress={confirm} /></View>
+  </Dialog>;
 }
 
 function ContactTableRow({ item, columns, widths, onEdit, onReview, onDelete }: { item: any; columns: string[]; widths: number[]; onEdit: (value: any) => void; onReview: (value: any) => void; onDelete: (value: any) => void }) {
