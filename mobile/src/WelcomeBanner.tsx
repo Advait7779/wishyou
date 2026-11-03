@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import iconPaths from './banner-icons.json';
@@ -18,7 +18,7 @@ export function WelcomeBanner() {
     </View>
     <View style={styles.content}>
       <Text style={styles.eyebrow}>YOUR WISHING SPACE</Text>
-      <Text style={styles.title}>Celebrate the little things.</Text>
+      <Text style={styles.title}>Celebrate the little{'\n'}things.</Text>
       <View style={styles.bottomRow}>
         <Text style={styles.description}>Keep every birthday and anniversary close, and every message heartfelt.</Text>
         <View pointerEvents="none" accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.illustration}>
@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
   banner: { minHeight: 210, borderRadius: 19, overflow: 'hidden', paddingHorizontal: 20, paddingVertical: 20 },
   content: { gap: 10 },
   eyebrow: { color: '#ffe3ce', fontSize: 10, lineHeight: 14, letterSpacing: 1.5, fontWeight: '800' },
-  title: { color: '#fff', fontSize: 27, lineHeight: 33, fontWeight: '700', letterSpacing: -.65 },
+  title: { color: '#fff', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontStyle: 'italic', fontSize: 27, lineHeight: 33, fontWeight: '400', letterSpacing: -.65 },
   bottomRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   description: { flex: 1, minWidth: 0, color: '#fff5ed', fontSize: 13, lineHeight: 20 },
   outerRing: { position: 'absolute', width: 280, height: 280, borderRadius: 140, borderWidth: 1, borderColor: '#ffffff33', top: -170, right: -80 },
