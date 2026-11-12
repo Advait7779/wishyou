@@ -331,7 +331,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
   const activeImport = ['uploading', 'queued', 'processing', 'waiting_for_sends'].includes(importJob?.status);
   return (
     <div className="page-stack">
-      <Field label="Date order for this file"><select value={dateFormat} onChange={e => setDateFormat(e.target.value)} disabled={importing}><option value="">Choose before uploading</option><option value="DMY">Day / Month / Year (DD/MM/YYYY)</option><option value="MDY">Month / Day / Year (MM/DD/YYYY)</option></select></Field>
+      <Field label="Date order for this file"><ThemedDropdown label="Date order for this file" value={dateFormat} onChange={setDateFormat} disabled={importing} variant="date-order" options={['', 'DMY', 'MDY']} optionLabels={{ '': 'Choose before uploading', DMY: 'Day / Month / Year (DD/MM/YYYY)', MDY: 'Month / Day / Year (MM/DD/YYYY)' }} /></Field>
       {importJob && <ImportProgress job={importJob} uploadProgress={uploadProgress} onCancel={cancelUpload} canceling={cancelingUpload} />}
       {result === null ? (
         <div className="panel" aria-busy={busy}>{loadError ? <><p role="alert">Could not load contacts: {loadError}</p><Button variant="ghost" onClick={() => setDatasetVersion(version => version + 1)}>Retry</Button></> : 'Loading contacts…'}</div>
@@ -339,7 +339,7 @@ function Contacts({ settings, refresh, reloadKey, notify }) {
         <Import onChoose={importFile} onAdd={() => setAdding(true)} busy={importing || activeImport} />
       ) : (
         <>
-          <div className="section-top"><div><span className="eyebrow">YOUR PEOPLE</span><h2>Contact directory</h2><p>{result.total.toLocaleString()} contacts from {result.dataset.name}</p></div></div>
+          <div className="section-top"><div><span className="eyebrow">YOUR PEOPLE</span><h2>Contact directory</h2></div></div>
           <div className="panel table-panel">
           <div className="table-toolbar">
             <div className="search-box"><MagnifyingGlass size={19} /><input value={search} onChange={e => { setSearch(e.target.value); setPage(1); setCursor(null); setCursorStack([]); }} placeholder="Search 3+ characters in any column…" /></div>
@@ -564,7 +564,7 @@ const greetingCards = [
   { occasion: 'anniversary', channel: 'voice', title: 'Anniversary Voice Call' },
 ];
 
-function TimeDropdown({ label, value, options, onChange }) {
+function ThemedDropdown({ label, value, options, onChange, optionLabels = {}, disabled = false, variant = 'time' }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [position, setPosition] = useState(null);
@@ -574,18 +574,20 @@ function TimeDropdown({ label, value, options, onChange }) {
   const selectedIndex = Math.max(0, options.indexOf(String(value)));
 
   function show() {
+    if (disabled) return;
     setActiveIndex(selectedIndex);
     setOpen(true);
   }
 
   function choose(index) {
+    if (disabled) return;
     onChange(options[index]);
     setOpen(false);
     triggerRef.current?.focus();
   }
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || disabled) return;
     const place = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -613,7 +615,9 @@ function TimeDropdown({ label, value, options, onChange }) {
       window.removeEventListener('scroll', reposition, true);
       document.removeEventListener('pointerdown', dismiss);
     };
-  }, [open, options.length]);
+  }, [open, disabled, options.length]);
+
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
 
   useLayoutEffect(() => {
     if (!open || !position || !listRef.current) return;
@@ -634,18 +638,19 @@ function TimeDropdown({ label, value, options, onChange }) {
     else if ((event.key === 'Enter' || event.key === ' ') && open) { event.preventDefault(); choose(activeIndex); }
   }
 
-  return <div className="time-dropdown">
+  return <div className={`time-dropdown${variant === 'date-order' ? ' date-order-dropdown' : ''}`}>
     <button type="button" ref={triggerRef} className={`time-dropdown-trigger${open ? ' is-open' : ''}`}
+      disabled={disabled}
       aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? listId : undefined}
       aria-activedescendant={open ? `${listId}-${activeIndex}` : undefined}
       onClick={() => open ? setOpen(false) : show()} onKeyDown={handleKeyDown}>
-      <span>{value}</span><CaretDown size={13} weight="bold" />
+      <span>{optionLabels[value] ?? value}</span><CaretDown size={13} weight="bold" />
     </button>
-    {open && position && createPortal(<div id={listId} ref={listRef} className="time-dropdown-menu"
+    {open && !disabled && position && createPortal(<div id={listId} ref={listRef} className={`time-dropdown-menu${variant === 'date-order' ? ' date-order-menu' : ''}`}
       role="listbox" aria-label={label} style={position}>
       {options.map((option, index) => <div id={`${listId}-${index}`} key={option} role="option"
         aria-selected={option === String(value)} className={`time-dropdown-option${index === activeIndex ? ' is-active' : ''}`}
-        onClick={() => choose(index)}>{option}</div>)}
+        onClick={() => choose(index)}>{optionLabels[option] ?? option}</div>)}
     </div>, document.body)}
   </div>;
 }
@@ -663,12 +668,12 @@ function ScheduleTimePicker({ value, onChange }) {
   return <div className="field schedule-time-field">
     <span>Daily send time</span>
     <div className="schedule-time-controls" role="group" aria-label="Daily send time">
-      <TimeDropdown label="Hour" value={String(hour)} options={Array.from({ length: 12 }, (_, index) => String(index + 1))}
+      <ThemedDropdown label="Hour" value={String(hour)} options={Array.from({ length: 12 }, (_, index) => String(index + 1))}
         onChange={nextHour => update(nextHour, minute, period)} />
       <span aria-hidden="true">:</span>
-      <TimeDropdown label="Minute" value={minute} options={Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))}
+      <ThemedDropdown label="Minute" value={minute} options={Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'))}
         onChange={nextMinute => update(hour, nextMinute, period)} />
-      <TimeDropdown label="AM or PM" value={period} options={['AM', 'PM']}
+      <ThemedDropdown label="AM or PM" value={period} options={['AM', 'PM']}
         onChange={nextPeriod => update(hour, minute, nextPeriod)} />
     </div>
   </div>;

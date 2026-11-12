@@ -1,28 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { api, API_URL, json, login } from './api';
-import { Button, Card, c, Dialog, Field, Heading, Icon, IconName, Notice, s } from './ui';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { api, json } from './api';
+import { Button, Card, c, Dialog, Heading, Icon, IconName, Notice, s } from './ui';
 import { WelcomeBanner } from './WelcomeBanner';
 
-export function SignIn({ onLogin }: { onLogin: (email: string) => void }) {
-  const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
-  const [visible, setVisible] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  async function submit() { if (!email.trim() || !password || busy) return; setBusy(true); setError(''); try { onLogin(await login(email, password)); setPassword(''); } catch (cause: any) { setError(cause.message); } finally { setBusy(false); } }
-  return <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
-    <LinearGradient colors={['#e96d32', '#f9a463']} style={{ padding: 28, paddingBottom: 32 }}>
-      <View style={t.brand}><View style={t.mark}><Icon name="gift" color="#fff" size={23} /></View><Text style={[t.brandText, { color: '#fff' }]}>wishyou.com</Text></View>
-      <Text style={[s.eyebrow, { color: '#ffe2ca', marginTop: 30 }]}>A LITTLE JOY, RIGHT ON TIME</Text>
-      <Text style={{ color: '#fff', fontFamily: 'serif', fontStyle: 'italic', fontSize: 40, marginVertical: 14 }}>Make every{'\n'}moment count.</Text><Text style={{ color: '#fff2e8', lineHeight: 22 }}>Thoughtful wishes, beautifully organized.</Text>
-    </LinearGradient>
-    <View style={{ padding: 22, width: '100%', maxWidth: 470, alignSelf: 'center' }}><Card>
-      <View style={[t.mark, { backgroundColor: c.soft }]}><Icon name="gift" size={26} /></View><Heading eyebrow="YOUR WISHING SPACE" title="Welcome back" sub="Sign in to your wishing dashboard." />
-      <Field label="Email address" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" placeholder="you@company.com" />
-      <View><Field label="Password" value={password} onChangeText={setPassword} secureTextEntry={!visible} autoCapitalize="none" autoComplete="current-password" placeholder="Enter your password" onSubmitEditing={submit} style={{ paddingRight: 50 }} /><Pressable accessibilityLabel={visible ? 'Hide password' : 'Show password'} onPress={() => setVisible(!visible)} style={{ position: 'absolute', right: 4, bottom: 1, padding: 14 }}><Icon name={visible ? 'eye-off' : 'eye'} color={c.muted} /></Pressable></View>
-      <Notice text={error} error /><Button title="Sign in" icon="arrow-right" onPress={submit} busy={busy} disabled={!email.trim() || !password} /><Text style={[s.copy, { textAlign: 'center', fontSize: 11 }]}>Secure admin access</Text>
-    </Card>{__DEV__ && <Text selectable style={{ color: c.muted, fontSize: 10, marginTop: 14 }}>Development API: {API_URL || 'not configured'}</Text>}</View>
-  </ScrollView></KeyboardAvoidingView>;
-}
+export { SignIn } from './SignIn';
 
 export function Overview({ tick, onContacts }: { tick: number; onContacts: () => void }) {
   const [data, setData] = useState<any>(null); const [error, setError] = useState(''); const [busy, setBusy] = useState(true); const [reload, setReload] = useState(0);

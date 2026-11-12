@@ -360,6 +360,10 @@ body { min-width: 0; }
 .time-dropdown-option { display: flex; align-items: center; justify-content: center; min-height: 33px; border-radius: 6px; color: #4a3a2e; font-size: 12px; font-weight: 550; cursor: pointer; }
 .time-dropdown-option:hover, .time-dropdown-option.is-active { background: #fff0e5; color: #cf622a; }
 .time-dropdown-option[aria-selected="true"] { background: #f47737; color: #fff; font-weight: 700; }
+.date-order-dropdown, .date-order-dropdown:last-child { flex: 0 0 auto; width: 100%; }
+.date-order-dropdown .time-dropdown-trigger { justify-content: space-between; padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 500; }
+.date-order-dropdown .time-dropdown-trigger:disabled { cursor: not-allowed; }
+.date-order-menu .time-dropdown-option { justify-content: flex-start; padding: 8px 12px; font-size: 11px; }
 .schedule-time-controls > span { color: #8b7868; font-size: 16px; font-weight: 700; }
 @media (max-width: 560px) {
   .manual-contact-modal .modal-actions { flex-wrap: wrap; }

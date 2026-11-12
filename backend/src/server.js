@@ -51,6 +51,10 @@ app.get('/api/health', async (_req, res) => {
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const audit = (action, details = {}) => q('INSERT INTO audit_logs(action,details) VALUES($1,$2)', [action, details]);
+// Contact dates are calendar days and must not be converted to timestamps by the driver.
+const contactDates = `to_char(birth_date, 'YYYY-MM-DD') AS birth_date,
+  to_char(anniversary_date, 'YYYY-MM-DD') AS anniversary_date`;
+const contactRecordFields = `id,dataset_id,data,display_name,phone,${contactDates},active,created_at`;
 
 function smsMessageFromUrl(url) {
   return ['sms', 'message', 'text', 'body'].map(key => url.searchParams.get(key)).find(Boolean) || '';
@@ -143,7 +147,7 @@ app.get('/api/dashboard', asyncRoute(async (_, res) => {
   const anniversaryToday = `(EXTRACT(MONTH FROM anniversary_date)=EXTRACT(MONTH FROM (now() AT TIME ZONE $1)) AND EXTRACT(DAY FROM anniversary_date)=EXTRACT(DAY FROM (now() AT TIME ZONE $1)))`;
   const [todayCount, today] = await Promise.all([
     q(`SELECT count(*)::int AS total FROM contacts WHERE ${birthdayToday} OR ${anniversaryToday}`, [timezone]),
-    q(`SELECT id,display_name,phone,birth_date,anniversary_date,${birthdayToday} AS birthday_today,${anniversaryToday} AS anniversary_today
+    q(`SELECT id,display_name,phone,${contactDates},${birthdayToday} AS birthday_today,${anniversaryToday} AS anniversary_today
       FROM contacts WHERE ${birthdayToday} OR ${anniversaryToday} ORDER BY created_at DESC,id DESC LIMIT 3`, [timezone]),
   ]);
   res.json({ contacts: Number(dataset.rows[0]?.row_count || 0), greetingCount: greetingCount.rows[0].total,
@@ -174,7 +178,7 @@ app.get('/api/contacts', asyncRoute(async (req, res) => {
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   params.push(limit + 1);
   const [items, count] = await Promise.all([
-    q(`SELECT id,data,display_name,phone,birth_date,anniversary_date,active FROM contacts ${where} ORDER BY id DESC LIMIT $${params.length}`, params),
+    q(`SELECT id,data,display_name,phone,${contactDates},active FROM contacts ${where} ORDER BY id DESC LIMIT $${params.length}`, params),
     !includeTotal ? Promise.resolve(null) : search
       ? q('SELECT count(*)::bigint AS total FROM contacts WHERE dataset_id=$1 AND (data::text ILIKE $2 OR phone ILIKE $2)', [dataset.id, `%${search}%`])
       : Promise.resolve({ rows: [{ total: dataset.row_count }] }),
@@ -206,7 +210,7 @@ app.post('/api/contacts', asyncRoute(async (req, res) => {
       dataset = (await client.query('INSERT INTO datasets(name,columns,mapping,row_count) VALUES($1,$2,$3,0) RETURNING *',
         ['Manual contacts', JSON.stringify(schema.columns), JSON.stringify(schema.mapping)])).rows[0];
     }
-    const contact = (await client.query('INSERT INTO contacts(dataset_id,data,display_name,phone,birth_date,anniversary_date,active) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+    const contact = (await client.query(`INSERT INTO contacts(dataset_id,data,display_name,phone,birth_date,anniversary_date,active) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING ${contactRecordFields}`,
       [dataset.id, record.data, record.name, record.phone, record.birth, record.anniversary, req.body.active !== false])).rows[0];
     await client.query('UPDATE datasets SET row_count=row_count+1 WHERE id=$1', [dataset.id]);
     await client.query('INSERT INTO audit_logs(action,details) VALUES($1,$2)', ['contact.created', { id: contact.id, datasetId: dataset.id }]);
@@ -224,7 +228,7 @@ app.patch('/api/contacts/:id', asyncRoute(async (req, res) => {
     rows: [dataset.columns.map(header => Object.hasOwn(data, header) ? data[header] : '')] }, dataset.mapping);
   if (transformed.invalid.length) return res.status(400).json({ error: transformed.invalid[0].reasons.join(', ') });
   const record = transformed.valid[0];
-  const result = await q('UPDATE contacts SET data=$1,display_name=$2,phone=$3,birth_date=$4,anniversary_date=$5,active=$6 WHERE id=$7 RETURNING *', [record.data, record.name, record.phone, record.birth, record.anniversary, req.body.active !== false, req.params.id]);
+  const result = await q(`UPDATE contacts SET data=$1,display_name=$2,phone=$3,birth_date=$4,anniversary_date=$5,active=$6 WHERE id=$7 RETURNING ${contactRecordFields}`, [record.data, record.name, record.phone, record.birth, record.anniversary, req.body.active !== false, req.params.id]);
   if (!result.rowCount) return res.status(404).json({ error: 'Contact not found.' });
   await audit('contact.updated', { id: req.params.id });
   res.json(result.rows[0]);
@@ -255,7 +259,7 @@ app.get('/api/contacts/:id/greeting-review', asyncRoute(async (req, res) => {
   if (!/^[1-9]\d*$/.test(id) || !['birthday', 'anniversary'].includes(occasion) || !['sms', 'voice'].includes(channel)) {
     return res.status(400).json({ error: 'Choose a valid contact, occasion, and channel.' });
   }
-  const contact = (await q("SELECT id,display_name,phone,to_char(birth_date,'YYYY-MM-DD') AS birth_date,to_char(anniversary_date,'YYYY-MM-DD') AS anniversary_date,active FROM contacts WHERE id=$1", [id])).rows[0];
+  const contact = (await q(`SELECT id,display_name,phone,${contactDates},active FROM contacts WHERE id=$1`, [id])).rows[0];
   if (!contact) return res.status(404).json({ error: 'Contact not found.' });
   const [slot, attempts, pending, manualLimit] = await Promise.all([
     q('SELECT content,ready_url_encrypted FROM wish_templates WHERE settings_slot=true AND active=true AND occasion=$1 AND channel=$2', [occasion, channel]),
