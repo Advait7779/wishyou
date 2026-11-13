@@ -11,7 +11,7 @@ export function SignIn({ onLogin }: { onLogin: (email: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const passwordRef = useRef<TextInput>(null);
+  const passwordRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const { width } = useWindowDimensions();
   const landscape = width >= 740;
 

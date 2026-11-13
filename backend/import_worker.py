@@ -1,6 +1,7 @@
 """Stream large CSV/XLSX contact imports into PostgreSQL with psycopg2 COPY."""
 
 import csv
+import hashlib
 import io
 import itertools
 import json
@@ -294,7 +295,7 @@ def run(job_id):
             cur.execute("SELECT pg_try_advisory_lock(7287, hashtext(%s))", (job_id,))
             if not cur.fetchone()[0]:
                 return
-            cur.execute("SELECT filename,file_size,received_bytes,status,date_format FROM import_jobs WHERE id=%s", (job_id,))
+            cur.execute("SELECT filename,file_size,received_bytes,status,date_format,file_sha256 FROM import_jobs WHERE id=%s", (job_id,))
             job = cur.fetchone()
             if not job or job[3] not in ("processing", "waiting_for_sends") or job[1] != job[2]:
                 return
@@ -303,6 +304,11 @@ def run(job_id):
         path = UPLOAD_DIR / (job_id + ".part")
         if not path.is_file() or path.stat().st_size != job[1]:
             raise ValueError("The uploaded file is missing or incomplete.")
+        if job[5]:
+            with path.open("rb") as uploaded_file:
+                actual_sha256 = hashlib.file_digest(uploaded_file, "sha256").hexdigest()
+            if actual_sha256 != job[5]:
+                raise ValueError("The uploaded file does not match the original. Start the import again with the correct file.")
         with conn.cursor() as cur:
             cur.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(stage)))
             # Staging is fully reproducible from the retained upload, so avoid

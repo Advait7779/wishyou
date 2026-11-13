@@ -6,7 +6,10 @@ import Reanimated, { FadeInDown, ReduceMotion } from 'react-native-reanimated';
 
 export const c = { bg: '#fffaf5', orange: '#f17235', ink: '#2c241d', muted: '#928276', border: '#f0e4d9', soft: '#fff0e5', red: '#d94e43', green: '#099b83' };
 export type IconName = React.ComponentProps<typeof Feather>['name'];
-export function Icon({ name, color = c.orange, size = 19 }: { name: IconName; color?: ColorValue; size?: number }) { return <Feather name={name} color={color} size={size} />; }
+export function Icon({ name, color = c.orange, size = 19 }: { name: IconName; color?: ColorValue; size?: number }) {
+  const iconColor = typeof color === 'number' || color == null ? c.orange : color;
+  return <Feather name={name} color={iconColor} size={size} />;
+}
 export function Button({ title, onPress, icon, soft, danger, disabled, busy, compact }: { title: string; onPress: () => void; icon?: IconName; soft?: boolean; danger?: boolean; disabled?: boolean; busy?: boolean; compact?: boolean }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={title} disabled={disabled || busy} onPress={onPress}
     hitSlop={compact ? { top: 4, bottom: 4 } : undefined}
@@ -26,7 +29,7 @@ export function Fade({ children }: PropsWithChildren) {
 }
 export function Dialog({ title, children, onClose, busy, compact, icon }: PropsWithChildren<{ title: string; onClose: () => void; busy?: boolean; compact?: boolean; icon?: IconName }>) {
   const insets = useSafeAreaInsets();
-  return <Modal visible transparent animationType="none" onRequestClose={() => !busy && onClose()}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[s.backdrop, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
+  return <Modal visible transparent animationType="none" onRequestClose={() => { if (!busy) onClose(); }}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[s.backdrop, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
     <Reanimated.View entering={FadeInDown.duration(200).reduceMotion(ReduceMotion.System)} accessibilityViewIsModal style={[s.dialog, compact && { width: '100%', maxWidth: 320, alignSelf: 'center', borderRadius: 16, padding: 16, gap: 10 }]}>
       <View style={[s.dialogHeader, compact && { gap: 9 }]}>
         {icon && <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={15} /></View>}

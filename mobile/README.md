@@ -1,6 +1,6 @@
 # WishYou mobile
 
-React Native Android app using Expo SDK 57 for local Expo Go testing. Mobile dependencies and lockfile are independent of the web/backend workspaces.
+React Native Android app using Expo SDK 58. Mobile dependencies and lockfile are independent of the web/backend workspaces.
 
 ## Test with Expo Go
 
@@ -13,7 +13,7 @@ In Expo Go the API defaults to the Metro server's LAN hostname on port 4001. If 
 
 To deliberately test real sending, run the normal backend with `npm run dev:backend` and point `EXPO_PUBLIC_API_URL` at its port (normally 4000), then restart Expo. Only confirm sends to approved test numbers. The shared two-per-number limit applies to web and mobile together.
 
-The installed Expo Go must support SDK 57. If Expo Go reports an SDK mismatch, use a matching Expo Go version on Android or align the project SDK before testing. The official template guidance used for this implementation is https://docs.expo.dev/more/create-expo/ .
+Use Expo Go with SDK 58 support when testing locally.
 
 ## Included
 
@@ -22,7 +22,7 @@ The installed Expo Go must support SDK 57. If Expo Go reports an SDK mismatch, u
 - SMS/voice review with occasion/channel choice, date warning, preview, provider acceptance status, and shared two-per-number rolling 24-hour allowance.
 - Idempotency keys persist through uncertain network failures so retrying the same send does not enqueue it twice. Read requests can be retried; sends are never silently queued offline.
 - Schedule time selection and automatic birthday/anniversary switches; uses the existing server timezone and scheduler. Provider URLs are managed only through the web panel.
-- CSV/XLSX selection, bounded 4 MiB file reads, upload offset resume, pause on backgrounding, cancellation, and server import progress. Android content-URI access and large uploads require physical-device testing. Interrupted uploads require selecting the same file again. 35-50 GiB mobile performance has not been established.
+- CSV/XLSX selection, 4 MiB file reads, upload resume, and server import progress. Resume checks the file's SHA-256 and date order. The server verifies the uploaded bytes before replacing contacts. If Android's file provider cannot seek, the app uses a temporary local copy, which requires enough free space for the file. Use the web panel for very large files. An earlier upload without a checksum must be resumed where it started or canceled before starting a verified upload.
 
 ## Sessions and API
 
@@ -34,6 +34,4 @@ The server validates mobile permission scope on every request and rejects provid
 
 `cd mobile; npx tsc --noEmit` checks types. `npx expo export --platform android` checks Metro and Hermes compilation; it does not install or run the app on a phone. Physical-device testing must cover keyboard/date entry, horizontal/vertical table gestures, all action dialogs, refresh after web edits, connection loss, upload resume, and reduced motion. Provider sends should be tested only after deliberate confirmation to an approved test number.
 
-`eas.json` defines a preview APK and production AAB profile. Before release, set the final Android package ID, HTTPS API origin, and Expo project/signing credentials, and review the included icon/splash assets. EAS builds/signing have not been run. The Expo build-properties plugin disables Android cleartext traffic for standalone builds; Expo Go's development networking uses its own native configuration.
-
-The SDK 57 toolchain currently reports inherited development dependency advisories through `npm audit`. Compatible audit updates were applied; a forced SDK upgrade was not applied because it changes Expo Go compatibility. Resolve/review the remaining development-tool advisories before publishing a release.
+Deploy the updated backend first. The app is linked to the `advait7779/wishyou-mobile` EAS project. Configure Android signing and set `EXPO_PUBLIC_API_URL` in the EAS `preview` and `production` environments to the public HTTPS origin of WishYou, without `/api`. The build checks for a valid HTTPS origin before installation. From `mobile/`, run `npx eas-cli@latest build --platform android --profile preview` for an installable APK or use the `production` profile for a Play Store AAB. Verify `/api/health` on the configured origin and test the signed APK on a physical Android phone before distributing it.

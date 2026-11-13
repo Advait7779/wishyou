@@ -27,6 +27,12 @@
       ["expo-splash-screen", { "image": "./assets/wishyou-icon.png", "imageWidth": 100, "backgroundColor": "#fffaf5" }],
       "expo-font",
       ["expo-build-properties", { "android": { "usesCleartextTraffic": false } }]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9cf2b007-a54d-407a-8686-bbc55f846169"
+      }
+    },
+    "owner": "advait7779"
   }
 }

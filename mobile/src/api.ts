@@ -14,6 +14,7 @@ export class ApiError extends Error { constructor(message: string, public status
 async function raw(path: string, options: RequestInit = {}) {
   if (!API_URL) throw new ApiError('Set EXPO_PUBLIC_API_URL to your hosted API address.');
   if (!__DEV__ && !API_URL.startsWith('https://')) throw new ApiError('The released app requires an HTTPS API address.');
+  if (options.signal?.aborted) throw new ApiError('Request canceled.');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   const abort = () => controller.abort();

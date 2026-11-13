@@ -50,6 +50,7 @@ function publicJob(row) {
   return {
     id: row.id, filename: row.filename, size: Number(row.file_size),
     dateFormat: row.date_format,
+    sha256: row.file_sha256,
     offset: Number(row.received_bytes), status: row.status,
     processedRows: Number(row.processed_rows), imported: Number(row.imported_count),
     skipped: Number(row.skipped_count), invalidSample: row.invalid_sample || [],
@@ -172,6 +173,10 @@ export function installUploadRoutes(app, asyncRoute, audit) {
     catch (error) { return res.status(400).json({ error: error.message }); }
     const dateFormat = req.body.dateFormat;
     if (!['DMY', 'MDY'].includes(dateFormat)) return res.status(400).json({ error: 'Choose DD/MM/YYYY or MM/DD/YYYY before uploading. ISO and Excel dates work with either choice.' });
+    const sha256 = req.body.sha256 ?? null;
+    if (sha256 !== null && (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256))) {
+      return res.status(400).json({ error: 'Invalid file checksum.' });
+    }
     await fs.mkdir(uploadDir, { recursive: true });
     const client = await pool.connect();
     let id;
@@ -192,7 +197,7 @@ export function installUploadRoutes(app, asyncRoute, audit) {
       }
       id = randomUUID();
       await fs.writeFile(uploadPath(id), '', { flag: 'wx' });
-      const row = (await client.query('INSERT INTO import_jobs(id,filename,file_size,date_format) VALUES($1,$2,$3,$4) RETURNING *', [id, input.filename, input.size, dateFormat])).rows[0];
+      const row = (await client.query('INSERT INTO import_jobs(id,filename,file_size,date_format,file_sha256) VALUES($1,$2,$3,$4,$5) RETURNING *', [id, input.filename, input.size, dateFormat, sha256])).rows[0];
       await client.query('COMMIT');
       committed = true;
       res.status(201).json(publicJob(row));
@@ -239,6 +244,10 @@ export function installUploadRoutes(app, asyncRoute, audit) {
       if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Upload not found.' }); }
       const received = Number(row.received_bytes);
       if (row.status !== 'uploading') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'This upload is no longer accepting chunks.' }); }
+      if (row.file_sha256 && req.get('Upload-SHA256') !== row.file_sha256) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'This file does not match the original upload.' });
+      }
       if (offset !== received) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Upload offset changed.', offset: received }); }
       if (received + length > Number(row.file_size)) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Chunk exceeds the declared file size.' }); }
       file = await fs.open(uploadPath(id), 'r+');

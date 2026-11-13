@@ -104,6 +104,7 @@ export async function setupDatabase() {
   await q('ALTER TABLE deliveries ADD COLUMN IF NOT EXISTS sending_started_at TIMESTAMPTZ');
   await q('ALTER TABLE datasets ALTER COLUMN row_count TYPE BIGINT');
   await q("ALTER TABLE import_jobs ADD COLUMN IF NOT EXISTS date_format TEXT NOT NULL DEFAULT 'DMY'");
+  await q('ALTER TABLE import_jobs ADD COLUMN IF NOT EXISTS file_sha256 TEXT');
   await q('CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public');
   await q('ALTER EXTENSION pg_trgm SET SCHEMA public');
   await q('CREATE INDEX CONCURRENTLY IF NOT EXISTS contacts_data_search_idx ON contacts USING GIN ((data::text) public.gin_trgm_ops)');

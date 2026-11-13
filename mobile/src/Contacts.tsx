@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
-import { fetch as expoFetch } from 'expo/fetch';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
-import { api, API_URL, authorizedHeaders, json } from './api';
+import { api, API_URL, json } from './api';
+import { uploadContactFile } from './contact-upload';
 import { Button, c, Choice, Dialog, Field, Heading, Icon, IconName, Notice, s } from './ui';
 
 export function Contacts({ tick }: { tick: number }) {
@@ -46,34 +45,20 @@ export function Contacts({ tick }: { tick: number }) {
   async function remove(contact: any) { await api(`/contacts/${contact.id}`, { method: 'DELETE' }); setDeleting(null); invalidate(); setMessage('Contact deleted.'); }
   async function importFile(dateFormat: string) {
     if (uploadRef.current) return;
-    let handle: ReturnType<File['open']> | undefined;
-    const controller = new AbortController(); uploadRef.current = controller; setUploading(true); setError(''); setImportOpen(false);
+    const controller = new AbortController(); uploadRef.current = controller; setUploading(true); setError(''); setMessage(''); setImportOpen(false);
     let sub: ReturnType<typeof AppState.addEventListener> | undefined;
     try {
       const selected = await DocumentPicker.getDocumentAsync({ type: ['text/csv', 'text/comma-separated-values', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream'], copyToCacheDirectory: false });
       if (selected.canceled || controller.signal.aborted) return;
       sub = AppState.addEventListener('change', state => { if (state === 'background') controller.abort(); });
-      const asset = selected.assets[0]; const file = new File(asset.uri); const size = asset.size || file.size;
-      if (!/\.(csv|xlsx)$/i.test(asset.name) || !size) throw new Error('Choose a CSV or XLSX file with a valid size.');
-      const fingerprint = `${asset.name}:${size}:${dateFormat}`;
-      let current = job?.status === 'uploading' && job.filename === asset.name && job.size === size && job.dateFormat === dateFormat ? await api(`/imports/uploads/${job.id}`) : null;
-      if (!current) current = await api('/imports/uploads', json('POST', { filename: asset.name, size, dateFormat }));
-      acceptJob(current); handle = file.open();
-      let offset = current.offset;
-      while (offset < size) {
-        if (controller.signal.aborted) { if (mounted.current) setMessage('Upload paused. Select the same file to resume.'); return; }
-        handle.offset = offset;
-        const bytes = handle.readBytes(Math.min(4 * 1024 * 1024, size - offset));
-        const headers = await authorizedHeaders();
-        const response = await expoFetch(`${API_URL}/api/imports/uploads/${current.id}`, { method: 'PATCH', body: bytes,
-          headers: { ...headers, 'Content-Type': 'application/octet-stream', 'Upload-Offset': String(offset), 'Content-Length': String(bytes.byteLength) }, signal: controller.signal });
-        const next: any = await response.json();
-        if (!response.ok) throw new Error(next.error || 'Upload interrupted. Select the same file to resume.');
-        offset = next.offset; acceptJob(next);
-      }
-      if (!controller.signal.aborted) { acceptJob(await api(`/imports/uploads/${current.id}/complete`, json('POST', {}))); if (mounted.current) setMessage(`Upload complete. ${fingerprint.split(':')[0]} is importing on the server.`); }
-    } catch (e: any) { if (mounted.current) { if (controller.signal.aborted) setMessage('Upload paused. Select the same file to resume.'); else setError(e.message); } }
-    finally { handle?.close(); sub?.remove(); uploadRef.current = null; if (mounted.current) setUploading(false); }
+      const asset = selected.assets[0];
+      if (mounted.current) setMessage('Checking the selected file before uploading…');
+      const completedJob = await uploadContactFile(asset, dateFormat, controller.signal, acceptJob);
+      if (!mounted.current) return;
+      if (completedJob) setMessage(`Upload complete. ${asset.name} is importing on the server.`);
+      else if (controller.signal.aborted) setMessage('Upload paused. Select the same file to resume.');
+    } catch (e: any) { if (mounted.current) { if (controller.signal.aborted) setMessage('Upload paused. Select the same file to resume.'); else { setMessage(''); setError(e.message); } } }
+    finally { sub?.remove(); uploadRef.current = null; if (mounted.current) setUploading(false); }
   }
   const columns: string[] = result?.dataset?.columns || []; const widths = columns.map(column => /name|address|email/i.test(column) ? 132 : 112); const tableWidth = widths.reduce((a, b) => a + b, 0) + 272;
   const usableSearch = !search.trim() || search.trim().length >= 3;
